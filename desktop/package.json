@@ -1,0 +1,74 @@
+{
+  "name": "monkeycord-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monkeycord — chamadas de video e audio com a galera",
+  "author": "Monkeycord",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "icon": "node scripts/make-icon.js",
+    "web": "node scripts/build-web.js",
+    "dev": "npm run web && electron .",
+    "dist": "npm run icon && npm run web && electron-builder --win --publish never",
+    "release": "npm run icon && npm run web && electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "electron": "^39.2.7",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "app.monkeycord.desktop",
+    "productName": "Monkeycord",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "preload-picker.js",
+      "picker.html",
+      "picker.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Monkeycord-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Monkeycord"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ruyteer",
+        "repo": "monkeycord",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ruyteer/monkeycord.git"
+  }
+}

@@ -1,0 +1,89 @@
+name: App desktop
+
+# Gera o instalador do Windows e publica no Releases.
+# Dispara a cada push na main que mexa no app, ou na mão pelo botão "Run workflow".
+# A versão publicada é a de desktop/package.json: se a tag v<versao> já existir,
+# ele só compila e não publica (evita sobrescrever release antiga sem querer).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.mts"
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependências do site
+        run: npm ci
+
+      - name: Dependências do app
+        run: npm ci
+        working-directory: desktop
+
+      - name: Versão já publicada?
+        id: versao
+        shell: bash
+        run: |
+          v=$(node -p "require('./desktop/package.json').version")
+          echo "numero=$v" >> "$GITHUB_OUTPUT"
+          if git ls-remote --tags origin "refs/tags/v$v" | grep -q .; then
+            echo "publicar=false" >> "$GITHUB_OUTPUT"
+            echo "A tag v$v já existe — vou só compilar. Suba a versão em desktop/package.json pra publicar."
+          else
+            echo "publicar=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compilar a interface
+        run: npm run web
+        working-directory: desktop
+        env:
+          MONKEYCORD_SITE: ${{ vars.MONKEYCORD_SITE || 'https://monkeycord.netlify.app' }}
+
+      - name: Teste de abertura
+        run: npx electron .
+        working-directory: desktop
+        env:
+          MONKEYCORD_SMOKE: "1"
+
+      - name: Gerar ícone
+        run: npm run icon
+        working-directory: desktop
+
+      - name: Instalador (sem publicar)
+        if: steps.versao.outputs.publicar == 'false'
+        run: npx electron-builder --win --publish never
+        working-directory: desktop
+
+      - name: Instalador + Release v${{ steps.versao.outputs.numero }}
+        if: steps.versao.outputs.publicar == 'true'
+        run: npx electron-builder --win --publish always
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Monkeycord-Setup-${{ steps.versao.outputs.numero }}
+          path: desktop/release/*.exe
+          if-no-files-found: error
