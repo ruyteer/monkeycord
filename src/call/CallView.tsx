@@ -109,7 +109,7 @@ function Header({ room, count }: { room: string; count: number }) {
     const url = `${location.origin}/?sala=${encodeURIComponent(room)}`;
     try {
       if (navigator.share && /Mobi/i.test(navigator.userAgent)) {
-        await navigator.share({ title: "Resenha", text: "Cola na chamada", url });
+        await navigator.share({ title: "MonkeyCord", text: "Cola na chamada", url });
         return;
       }
       await navigator.clipboard.writeText(url);
@@ -124,7 +124,7 @@ function Header({ room, count }: { room: string; count: number }) {
   return (
     <header className="safe-top flex items-center justify-between gap-3 px-3 pb-2 sm:px-5 sm:pb-3">
       <div className="flex min-w-0 items-baseline gap-3">
-        <span className="chrome-title text-2xl leading-none sm:text-3xl">Resenha</span>
+        <span className="chrome-title text-2xl leading-none sm:text-3xl">MonkeyCord</span>
         <span className="truncate text-sm text-muted-foreground">#{room}</span>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:gap-2 sm:text-sm">

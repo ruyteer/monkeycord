@@ -45,7 +45,7 @@ export default function App() {
           <h1 className="chrome-title text-5xl">Falou!</h1>
           <p className="text-muted-foreground">Você saiu de #{stage.room}.</p>
           <Button variant="liquid-metal" size="xl" onClick={() => setStage({ step: "lobby" })}>
-            Voltar pra resenha
+            Voltar pro MonkeyCord
           </Button>
         </div>
       )}
@@ -75,7 +75,7 @@ function Lobby({ onReady }: { onReady: (m: Meeting, room: string) => void }) {
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center">
-      <h1 className="chrome-title hero-in text-7xl sm:text-8xl">Resenha</h1>
+      <h1 className="chrome-title hero-in text-7xl sm:text-8xl">MonkeyCord</h1>
       <p className="hero-in mt-2 mb-8 text-center text-balance text-muted-foreground" style={{ "--d": "0.1s" } as React.CSSProperties}>
         Chamada de vídeo com a galera. Só colocar o nome.
       </p>
@@ -103,7 +103,7 @@ function Lobby({ onReady }: { onReady: (m: Meeting, room: string) => void }) {
             inputSize="lg"
             value={room}
             onChange={(e) => setRoom(e.target.value)}
-            placeholder="resenha"
+            placeholder="geral"
             maxLength={40}
           />
         </label>

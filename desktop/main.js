@@ -30,7 +30,7 @@ function createWindow() {
     backgroundColor: "#09090a",
     autoHideMenuBar: true,
     show: false,
-    title: "Monkeycord",
+    title: "MonkeyCord",
     icon: path.join(__dirname, "build", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

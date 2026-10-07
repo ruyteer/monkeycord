@@ -86,7 +86,7 @@ jobs:
           gh release create "v${{ steps.versao.outputs.numero }}" \
             --target "$GITHUB_SHA" \
             --title "v${{ steps.versao.outputs.numero }}" \
-            --notes "Instalador do Monkeycord para Windows. Baixe o \`.exe\` aqui embaixo."
+            --notes "Instalador do MonkeyCord para Windows. Baixe o \`.exe\` aqui embaixo."
 
       - name: Instalador + Release v${{ steps.versao.outputs.numero }}
         if: steps.versao.outputs.publicar == 'true'
@@ -97,6 +97,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Monkeycord-Setup-${{ steps.versao.outputs.numero }}
+          name: MonkeyCord-Setup-${{ steps.versao.outputs.numero }}
           path: desktop/release/*.exe
           if-no-files-found: error

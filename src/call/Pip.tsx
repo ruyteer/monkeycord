@@ -59,7 +59,7 @@ export function usePip() {
       }
     }
     w.document.documentElement.className = "dark";
-    w.document.title = "Resenha";
+    w.document.title = "MonkeyCord";
     w.addEventListener("pagehide", () => setWin(null));
     setWin(w);
   }, []);

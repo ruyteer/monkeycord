@@ -1,4 +1,4 @@
-# Monkeycord
+# MonkeyCord
 
 Chamada de vídeo e áudio com a galera, em cima do Cloudflare RealtimeKit.
 Tem duas formas de entrar, e as duas caem **nas mesmas salas**:
@@ -60,7 +60,7 @@ O que ele faz de diferente do navegador:
 cd desktop
 npm install
 npm run dev     # roda o app aqui
-npm run dist    # gera release/Monkeycord-Setup-<versao>.exe
+npm run dist    # gera release/MonkeyCord-Setup-<versao>.exe
 ```
 
 ### Publicando uma versão nova
