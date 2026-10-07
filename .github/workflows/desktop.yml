@@ -75,6 +75,16 @@ jobs:
         run: npx electron-builder --win --publish never
         working-directory: desktop
 
+      # O GitHub só publica release em cima de uma tag que já existe
+      - name: Criar a tag v${{ steps.versao.outputs.numero }}
+        if: steps.versao.outputs.publicar == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.versao.outputs.numero }}"
+          git push origin "v${{ steps.versao.outputs.numero }}"
+
       - name: Instalador + Release v${{ steps.versao.outputs.numero }}
         if: steps.versao.outputs.publicar == 'true'
         run: npx electron-builder --win --publish always
