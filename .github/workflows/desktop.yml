@@ -75,15 +75,18 @@ jobs:
         run: npx electron-builder --win --publish never
         working-directory: desktop
 
-      # O GitHub só publica release em cima de uma tag que já existe
-      - name: Criar a tag v${{ steps.versao.outputs.numero }}
+      # Cria a tag e o release vazio ANTES de compilar. Se deixar o
+      # electron-builder criar, os uploads em paralelo criam releases duplicados.
+      - name: Criar a tag e o release v${{ steps.versao.outputs.numero }}
         if: steps.versao.outputs.publicar == 'true'
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.versao.outputs.numero }}"
-          git push origin "v${{ steps.versao.outputs.numero }}"
+          gh release create "v${{ steps.versao.outputs.numero }}" \
+            --target "$GITHUB_SHA" \
+            --title "v${{ steps.versao.outputs.numero }}" \
+            --notes "Instalador do Monkeycord para Windows. Baixe o \`.exe\` aqui embaixo."
 
       - name: Instalador + Release v${{ steps.versao.outputs.numero }}
         if: steps.versao.outputs.publicar == 'true'
