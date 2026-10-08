@@ -18,9 +18,7 @@ function desenhar() {
     const nome = document.createElement("span");
     nome.textContent = f.name;
     botao.append(img, nome);
-    botao.addEventListener("click", () =>
-      window.picker.choose(f.id, document.getElementById("som").checked)
-    );
+    botao.addEventListener("click", () => window.picker.choose(f.id));
     lista.append(botao);
   }
 }

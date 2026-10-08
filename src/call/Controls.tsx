@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   Mic,
   MicOff,
@@ -8,6 +8,8 @@ import {
   PictureInPicture2,
   Video as VideoIcon,
   VideoOff,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,22 @@ type Props = {
 export function Controls({ meeting, me, onLeave, onPip, compact }: Props) {
   const self = meeting.self;
   const sharing = me.screenEnabled;
+
+  // Som da transmissão: a faixa continua indo, só muda. Dá pra ligar e desligar
+  // no meio do filme (útil quando o som do Discord está entrando junto).
+  const somTrack = me.screenAudio;
+  const [som, setSom] = useState(true);
+  useEffect(() => {
+    if (!somTrack) return;
+    somTrack.enabled = true;
+    setSom(true);
+  }, [somTrack]);
+  const toggleSom = () => {
+    if (!somTrack) return;
+    somTrack.enabled = !somTrack.enabled;
+    setSom(somTrack.enabled);
+    toast(somTrack.enabled ? "Som da transmissão ligado" : "Som da transmissão desligado");
+  };
 
   const toggleMic = () => (me.audioEnabled ? self.disableAudio() : self.enableAudio()).catch(fail);
   const toggleCam = () => (me.videoEnabled ? self.disableVideo() : self.enableVideo()).catch(fail);
@@ -76,6 +94,18 @@ export function Controls({ meeting, me, onLeave, onPip, compact }: Props) {
             className={cn(size, sharing ? "bg-sky-400 text-black hover:bg-sky-300" : on)}
           >
             {sharing ? <MonitorX className={icon} /> : <MonitorUp className={icon} />}
+          </Button>
+        </Ctl>
+      )}
+
+      {sharing && somTrack && !compact && (
+        <Ctl tip={som ? "Desligar o som da transmissão" : "Ligar o som da transmissão"}>
+          <Button
+            aria-label="Som da transmissão"
+            onClick={toggleSom}
+            className={cn(size, som ? on : off)}
+          >
+            {som ? <Volume2 className={icon} /> : <VolumeX className={icon} />}
           </Button>
         </Ctl>
       )}

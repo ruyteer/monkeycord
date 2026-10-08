@@ -33,12 +33,7 @@
       .item img { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; background: #000; }
       .item span { display: block; padding: 8px 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid rgb(255 255 255 / 0.06); }
-      .som { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; user-select: none; }
-      .som input { width: 17px; height: 17px; accent-color: #f6821f; cursor: pointer; }
-      .textos { display: flex; flex-direction: column; line-height: 1.35; }
-      .dica { font-size: 12px; color: #8b8b8b; margin-top: 2px; }
-      .aviso { display: none; font-size: 12px; color: #f0b429; margin-top: 3px; }
-      .som input:checked ~ .textos .aviso { display: block; }
+      .dica { font-size: 12px; color: #8b8b8b; }
       .cancelar { border: 0; border-radius: 10px; padding: 9px 16px; font: inherit; font-weight: 600; background: rgb(255 255 255 / 0.08); color: #fafafa; cursor: pointer; }
       .cancelar:hover { background: rgb(255 255 255 / 0.14); }
     </style>
@@ -46,7 +41,7 @@
   <body>
     <header>
       <h1>O que você quer compartilhar?</h1>
-      <p>Escolha a tela ou a janela. Dá pra mandar o som junto.</p>
+      <p>O som do computador vai junto. Dá pra desligar o som na barra da chamada.</p>
     </header>
     <div class="abas">
       <button class="aba" id="aba-telas" aria-selected="true">Telas</button>
@@ -54,14 +49,7 @@
     </div>
     <main id="lista"></main>
     <footer>
-      <label class="som">
-        <input type="checkbox" id="som" checked />
-        <span class="textos">
-          <span>Mandar o som do computador</span>
-          <span class="dica">Pro filme ir com áudio.</span>
-          <span class="aviso">Vai junto tudo que tocar aqui, inclusive Discord e notificações.</span>
-        </span>
-      </label>
+      <span class="dica">Dica: pra filme, escolha a tela ou a janela do player.</span>
       <button class="cancelar" id="cancelar">Cancelar</button>
     </footer>
     <script src="picker.js"></script>

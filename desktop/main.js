@@ -76,9 +76,9 @@ function createWindow() {
            })).catch(e=>({erro: e.name+': '+e.message}))`,
           true
         );
-        const esperado = smoke === "share-mudo" ? 0 : 1;
-        compartilhouOk = r.video === 1 && r.audio === esperado;
-        console.log(`SMOKE compartilhamento=${JSON.stringify(r)} esperado_audio=${esperado}`);
+        // o som do Windows sempre vem junto; ligar/desligar é no botão da chamada
+        compartilhouOk = r.video === 1 && r.audio === 1;
+        console.log(`SMOKE compartilhamento=${JSON.stringify(r)}`);
       }
       console.log(`SMOKE tela=${montou ? "ok" : "vazia"} erros=${erros.length}`);
       erros.forEach((m) => console.log(`SMOKE erro: ${m}`));
@@ -112,11 +112,10 @@ function pickSource(sources) {
     });
 
     let answered = false;
-    const done = (id, som = true) => {
+    const done = (id) => {
       if (answered) return;
       answered = true;
-      const source = sources.find((s) => s.id === id);
-      resolve(source ? { source, som } : null);
+      resolve(sources.find((s) => s.id === id) ?? null);
       if (!picker.isDestroyed()) picker.close();
     };
 
@@ -128,7 +127,7 @@ function pickSource(sources) {
         thumb: s.thumbnail.toDataURL(),
       }))
     );
-    ipcMain.once("picker:choose", (_e, id, som) => done(id, som));
+    ipcMain.once("picker:choose", (_e, id) => done(id));
     ipcMain.once("picker:cancel", () => done(null));
     picker.on("closed", () => {
       ipcMain.removeHandler("picker:list");
@@ -158,16 +157,13 @@ app.whenReady().then(() => {
           thumbnailSize: { width: 320, height: 180 },
         });
         // MONKEYCORD_SMOKE=share: teste automático, sem abrir o seletor
-        const smoke = process.env.MONKEYCORD_SMOKE;
-        const escolha = smoke?.startsWith("share")
-          ? { source: sources[0], som: smoke !== "share-mudo" }
+        const source = process.env.MONKEYCORD_SMOKE?.startsWith("share")
+          ? sources[0]
           : await pickSource(sources);
-        if (!escolha) return callback({});
-        // O Chromium aborta a captura se pedirem áudio e a gente não devolver
-        // nenhum. Então sempre mandamos o "loopback" (todo o som do Windows) e
-        // avisamos a interface, que descarta a faixa quando a escolha foi "sem som".
-        win?.webContents.send("share:som", escolha.som);
-        callback({ video: escolha.source, audio: "loopback" });
+        if (!source) return callback({});
+        // "loopback" = todo o som do Windows. Quem apresenta liga e desliga esse
+        // som pelo botão da barra da chamada (a faixa continua, só vai muda).
+        callback({ video: source, audio: "loopback" });
       } catch (e) {
         console.error(e);
         callback({});
