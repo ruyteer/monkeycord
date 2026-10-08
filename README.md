@@ -53,7 +53,13 @@ O que ele faz de diferente do navegador:
 
 - **Compartilha a tela com o áudio do Windows junto** (`loopback`), que é o que
   falta no navegador pra passar filme com som.
-- Seletor próprio de tela ou janela, com miniaturas.
+- Seletor próprio de tela ou janela, com miniaturas, e uma caixinha pra decidir
+  se o som vai junto.
+- Atenção: o Windows só entrega o som da **saída inteira**. Não dá pra mandar o
+  filme e deixar o Discord de fora — ou vai tudo, ou vai sem som. Pra ter o
+  filme sem a ligação do Discord junto, mude a saída do Discord pra outro
+  dispositivo nas configurações de som do Windows (o `loopback` pega só o
+  dispositivo padrão), ou use a voz do próprio MonkeyCord.
 - Atualiza sozinho pelo GitHub Releases.
 
 ```bash

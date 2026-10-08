@@ -13,6 +13,13 @@ export const isMobile =
  * - áudio da aba/sistema sem processamento de voz (eco/ruído/ganho distorcem música).
  * O SDK chama getDisplayMedia internamente, então ajustamos a chamada aqui.
  */
+declare global {
+  interface Window {
+    /** Só existe no app desktop (preload do Electron) */
+    monkeycord?: { desktop: boolean; escolhaDeSom?: () => Promise<boolean> };
+  }
+}
+
 let patched = false;
 function patchDisplayMedia() {
   const md = navigator.mediaDevices;
@@ -21,6 +28,8 @@ function patchDisplayMedia() {
   const original = md.getDisplayMedia.bind(md);
   md.getDisplayMedia = async (constraints: DisplayMediaStreamOptions = {}) => {
     const video = typeof constraints.video === "object" ? constraints.video : {};
+    // No app desktop: pega a escolha "com/sem som" antes de abrir o seletor
+    const escolha = window.monkeycord?.escolhaDeSom?.();
     const stream = await original({
       ...constraints,
       video: {
@@ -42,13 +51,30 @@ function patchDisplayMedia() {
       selfBrowserSurface: "exclude",
     } as DisplayMediaStreamOptions);
     stream.getVideoTracks().forEach((t) => (t.contentHint = "motion"));
+
+    if (escolha) {
+      // Se o aviso não chegar (não deve acontecer), assume que o som vai junto
+      const comSom = await Promise.race([
+        escolha,
+        new Promise<boolean>((r) => setTimeout(() => r(true), 500)),
+      ]);
+      if (!comSom) {
+        stream.getAudioTracks().forEach((t) => {
+          t.stop();
+          stream.removeTrack(t);
+        });
+      }
+    }
+
     stream.getAudioTracks().forEach((t) => (t.contentHint = "music"));
     return stream;
   };
 }
 
+// Vale pra qualquer compartilhamento, não só os que passam pelo createMeeting
+if (typeof navigator !== "undefined") patchDisplayMedia();
+
 export async function createMeeting(authToken: string) {
-  patchDisplayMedia();
   return RealtimeKitClient.init({
     authToken,
     defaults: {

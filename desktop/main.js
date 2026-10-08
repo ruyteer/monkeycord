@@ -61,29 +61,36 @@ function createWindow() {
   // Teste de abertura (usado no CI): carrega, confere que a tela montou e sai.
   if (process.env.MONKEYCORD_SMOKE) {
     const erros = [];
+    let compartilhouOk = true;
     win.webContents.on("console-message", (e) => e.level === "error" && erros.push(e.message));
     win.webContents.once("did-finish-load", async () => {
       const montou = await win.webContents.executeJavaScript(
         "!!document.querySelector('#root')?.children.length"
       );
-      if (process.env.MONKEYCORD_SMOKE === "share") {
+      const smoke = process.env.MONKEYCORD_SMOKE;
+      if (smoke?.startsWith("share")) {
         const r = await win.webContents.executeJavaScript(
           `navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s=>({
-             video: s.getVideoTracks().map(t=>t.getSettings().width+'x'+t.getSettings().height+'@'+t.getSettings().frameRate),
+             video: s.getVideoTracks().length,
              audio: s.getAudioTracks().length,
            })).catch(e=>({erro: e.name+': '+e.message}))`,
           true
         );
-        console.log(`SMOKE compartilhamento=${JSON.stringify(r)}`);
+        const esperado = smoke === "share-mudo" ? 0 : 1;
+        compartilhouOk = r.video === 1 && r.audio === esperado;
+        console.log(`SMOKE compartilhamento=${JSON.stringify(r)} esperado_audio=${esperado}`);
       }
       console.log(`SMOKE tela=${montou ? "ok" : "vazia"} erros=${erros.length}`);
       erros.forEach((m) => console.log(`SMOKE erro: ${m}`));
-      app.exit(montou && erros.length === 0 ? 0 : 1);
+      app.exit(montou && erros.length === 0 && compartilhouOk ? 0 : 1);
     });
   }
 }
 
-/** Janela de escolha do que compartilhar (tela inteira ou uma janela). */
+/**
+ * Janela de escolha do que compartilhar: a fonte e se o som do computador vai
+ * junto. Devolve { source, som } ou null se cancelar.
+ */
 function pickSource(sources) {
   return new Promise((resolve) => {
     const picker = new BrowserWindow({
@@ -105,10 +112,11 @@ function pickSource(sources) {
     });
 
     let answered = false;
-    const done = (id) => {
+    const done = (id, som = true) => {
       if (answered) return;
       answered = true;
-      resolve(sources.find((s) => s.id === id) ?? null);
+      const source = sources.find((s) => s.id === id);
+      resolve(source ? { source, som } : null);
       if (!picker.isDestroyed()) picker.close();
     };
 
@@ -120,7 +128,7 @@ function pickSource(sources) {
         thumb: s.thumbnail.toDataURL(),
       }))
     );
-    ipcMain.once("picker:choose", (_e, id) => done(id));
+    ipcMain.once("picker:choose", (_e, id, som) => done(id, som));
     ipcMain.once("picker:cancel", () => done(null));
     picker.on("closed", () => {
       ipcMain.removeHandler("picker:list");
@@ -150,13 +158,16 @@ app.whenReady().then(() => {
           thumbnailSize: { width: 320, height: 180 },
         });
         // MONKEYCORD_SMOKE=share: teste automático, sem abrir o seletor
-        const source =
-          process.env.MONKEYCORD_SMOKE === "share" || sources.length <= 1
-            ? sources[0]
-            : await pickSource(sources);
-        if (!source) return callback({});
-        // "loopback" = áudio que está tocando no Windows
-        callback({ video: source, audio: "loopback" });
+        const smoke = process.env.MONKEYCORD_SMOKE;
+        const escolha = smoke?.startsWith("share")
+          ? { source: sources[0], som: smoke !== "share-mudo" }
+          : await pickSource(sources);
+        if (!escolha) return callback({});
+        // O Chromium aborta a captura se pedirem áudio e a gente não devolver
+        // nenhum. Então sempre mandamos o "loopback" (todo o som do Windows) e
+        // avisamos a interface, que descarta a faixa quando a escolha foi "sem som".
+        win?.webContents.send("share:som", escolha.som);
+        callback({ video: escolha.source, audio: "loopback" });
       } catch (e) {
         console.error(e);
         callback({});
