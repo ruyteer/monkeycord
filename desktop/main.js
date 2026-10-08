@@ -62,12 +62,26 @@ function createWindow() {
   if (process.env.MONKEYCORD_SMOKE) {
     const erros = [];
     let compartilhouOk = true;
+    let apiOk = true;
     win.webContents.on("console-message", (e) => e.level === "error" && erros.push(e.message));
     win.webContents.once("did-finish-load", async () => {
       const montou = await win.webContents.executeJavaScript(
         "!!document.querySelector('#root')?.children.length"
       );
       const smoke = process.env.MONKEYCORD_SMOKE;
+      // MONKEYCORD_SMOKE=api: confere se a API publicada aceita o app (CORS)
+      if (smoke === "api") {
+        const r = await win.webContents.executeJavaScript(
+          `fetch(${JSON.stringify(SITE)} + "/api/join", {
+             method: "POST",
+             headers: { "Content-Type": "application/json" },
+             body: JSON.stringify({ name: "TesteApp", room: "teste-do-app" }),
+           }).then(async (res) => ({ status: res.status, token: !!(await res.json()).authToken }))
+             .catch((e) => ({ erro: e.name + ": " + e.message }))`
+        );
+        apiOk = r.status === 200 && r.token;
+        console.log(`SMOKE api=${JSON.stringify(r)}`);
+      }
       if (smoke?.startsWith("share")) {
         const r = await win.webContents.executeJavaScript(
           `navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s=>({
@@ -82,7 +96,7 @@ function createWindow() {
       }
       console.log(`SMOKE tela=${montou ? "ok" : "vazia"} erros=${erros.length}`);
       erros.forEach((m) => console.log(`SMOKE erro: ${m}`));
-      app.exit(montou && erros.length === 0 && compartilhouOk ? 0 : 1);
+      app.exit(montou && erros.length === 0 && compartilhouOk && apiOk ? 0 : 1);
     });
   }
 }
