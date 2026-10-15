@@ -50,12 +50,12 @@ function patchDisplayMedia() {
 // Vale pra qualquer compartilhamento, não só os que passam pelo createMeeting
 if (typeof navigator !== "undefined") patchDisplayMedia();
 
-export async function createMeeting(authToken: string) {
+export async function createMeeting(authToken: string, opts: { audio?: boolean; video?: boolean } = {}) {
   return RealtimeKitClient.init({
     authToken,
     defaults: {
-      audio: true,
-      video: true,
+      audio: opts.audio ?? true,
+      video: opts.video ?? true,
       mediaConfiguration: {
         video: isMobile
           ? // No celular em pé, pede a câmera na vertical

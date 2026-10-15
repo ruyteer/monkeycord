@@ -1,7 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Link2, Users } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Controls } from "./Controls";
 import { bestGrid } from "./layout";
@@ -10,10 +7,14 @@ import { PipView, hasDocPip, usePip } from "./Pip";
 import { ScreenStage } from "./ScreenStage";
 import { Tile } from "./Tile";
 import { useCall, type Person } from "./useCall";
-import { Audio } from "./Video";
 
 type Props = { meeting: Meeting; room: string; onLeave: () => void };
 
+/**
+ * Palco da chamada (grade, dupla ou apresentação) + controles.
+ * O som dos participantes e os avisos de entrada/saída ficam no shell
+ * (CallAudio), pra continuarem quando você sai deste canal.
+ */
 export function CallView({ meeting, room, onLeave }: Props) {
   const { me, others, people, presenter, speaking } = useCall(meeting);
   const pip = usePip();
@@ -27,24 +28,9 @@ export function CallView({ meeting, room, onLeave }: Props) {
     onLeave();
   };
 
-  // Avisos de entrada/saída
-  useEffect(() => {
-    const joined = meeting.participants.joined;
-    const onJoin = (p: { name: string }) => toast(`${p.name} entrou`);
-    const onLeft = (p: { name: string }) => toast(`${p.name} saiu`);
-    joined.on("participantJoined", onJoin);
-    joined.on("participantLeft", onLeft);
-    return () => {
-      joined.off("participantJoined", onJoin);
-      joined.off("participantLeft", onLeft);
-    };
-  }, [meeting]);
-
   return (
     <div className="flex h-full flex-col">
-      {!immersive && <Header room={room} count={people.length} />}
-
-      <main className={cn("relative min-h-0 flex-1", immersive ? "p-0" : "px-2 sm:px-4")}>
+      <main className={cn("relative min-h-0 flex-1", immersive ? "p-0" : "px-2 pt-2 sm:px-4 sm:pt-4")}>
         {presenter ? (
           <PresentLayout
             presenter={presenter}
@@ -72,14 +58,6 @@ export function CallView({ meeting, room, onLeave }: Props) {
         <Controls meeting={meeting} me={me} onLeave={leave} onPip={hasDocPip || document.pictureInPictureEnabled ? pip.open : undefined} />
       </footer>
 
-      {/* Som de todo mundo (menos o seu), incluindo o áudio do filme compartilhado */}
-      {others.map((p) => (
-        <span key={p.id} hidden>
-          {p.audioEnabled && <Audio track={p.audioTrack} />}
-          {p.screenEnabled && p.screenAudio && <Audio track={p.screenAudio} />}
-        </span>
-      ))}
-
       {pip.win && (
         <PipView
           win={pip.win}
@@ -92,56 +70,6 @@ export function CallView({ meeting, room, onLeave }: Props) {
         />
       )}
     </div>
-  );
-}
-
-function Header({ room, count }: { room: string; count: number }) {
-  const [copied, setCopied] = useState(false);
-  const [secs, setSecs] = useState(0);
-  useEffect(() => {
-    const t0 = Date.now();
-    const id = window.setInterval(() => setSecs(Math.floor((Date.now() - t0) / 1000)), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-
-  const copy = async () => {
-    const url = `${location.origin}/?sala=${encodeURIComponent(room)}`;
-    try {
-      if (navigator.share && /Mobi/i.test(navigator.userAgent)) {
-        await navigator.share({ title: "MonkeyCord", text: "Cola na chamada", url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      toast.success("Link copiado, manda pra galera");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* cancelado */
-    }
-  };
-
-  return (
-    <header className="safe-top flex items-center justify-between gap-3 px-3 pb-2 sm:px-5 sm:pb-3">
-      <div className="flex min-w-0 items-baseline gap-3">
-        <span className="chrome-title text-2xl leading-none sm:text-3xl">MonkeyCord</span>
-        <span className="truncate text-sm text-muted-foreground">#{room}</span>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:gap-2 sm:text-sm">
-        <span className="flex items-center gap-1 rounded-full border border-white/6 bg-white/4 px-2.5 py-1 tabular-nums">
-          <span className="size-1.5 animate-pulse rounded-full bg-success" />
-          {time}
-        </span>
-        <span className="flex items-center gap-1 rounded-full border border-white/6 bg-white/4 px-2.5 py-1">
-          <Users className="size-3.5" />
-          {count}
-        </span>
-        <Button variant="secondary" size="sm" onClick={copy} className="rounded-full px-3">
-          {copied ? <Check /> : <Link2 />}
-          <span className="max-sm:hidden">Convidar</span>
-        </Button>
-      </div>
-    </header>
   );
 }
 
@@ -191,7 +119,7 @@ function GridLayout({
       {alone && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
           <div className="hero-in rounded-full border border-white/8 bg-black/60 px-4 py-2 text-sm text-foreground/90 backdrop-blur-md">
-            Só você em <b>#{room}</b>. Toque em <b>Convidar</b> e chama a galera.
+            Só você em <b>{room}</b>. Toque em <b>Convidar</b> e chama a galera.
           </div>
         </div>
       )}

@@ -35,6 +35,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  /* Camadas do layout estilo Discord (do mais escuro pro mais claro) */
+  --color-rail: var(--mc-rail);
+  --color-sidebar: var(--mc-sidebar);
+  --color-panel: var(--mc-panel);
+  --color-main: var(--mc-main);
+  --color-elevated: var(--mc-elevated);
+  --color-field: var(--mc-field);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -67,6 +74,14 @@
   --input: rgb(255 255 255 / 0.1);
   --ring: var(--primary);
   --radius: 0.6rem;
+
+  /* Camadas: servidores < canais < chat. Troque aqui pra mudar o tema todo. */
+  --mc-rail: #050506;
+  --mc-sidebar: #0c0c0e;
+  --mc-panel: #08080a;
+  --mc-main: #121214;
+  --mc-elevated: #1a1a1d;
+  --mc-field: #1c1c20;
 }
 
 @layer base {
@@ -198,6 +213,15 @@ body::before {
 }
 .safe-top {
   padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+/* Barra de rolagem fina, que só aparece forte no hover */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.12) transparent;
+}
+.scrollbar-thin:hover {
+  scrollbar-color: rgb(255 255 255 / 0.22) transparent;
 }
 
 .scrollbar-hide {
