@@ -9,7 +9,7 @@
     "start": "node server.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "dev:chat": "wrangler dev --config worker/wrangler.jsonc",
-    "deploy:chat": "wrangler deploy --config worker/wrangler.jsonc"
+    "deploy:chat": "cd worker && wrangler deploy --config wrangler.jsonc"
   },
   "engines": {
     "node": ">=20"

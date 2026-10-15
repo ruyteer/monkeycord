@@ -241,3 +241,16 @@ body::before {
     opacity: 1;
   }
 }
+
+/* Mensagem que você pulou pra ela (busca, fixadas, resposta) */
+.msg-flash {
+  animation: msg-flash 1.6s ease-out;
+}
+@keyframes msg-flash {
+  from {
+    background: rgb(255 255 255 / 0.12);
+  }
+  to {
+    background: transparent;
+  }
+}

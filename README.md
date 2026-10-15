@@ -50,9 +50,21 @@ Texto, quem está online e quem está em cada canal de voz vêm de um Worker na
 Cloudflare (`worker/`), com Durable Objects:
 
 - **Gateway** (um só): WebSocket no estilo do gateway do Discord — HELLO,
-  heartbeat, IDENTIFY/RESUME e eventos (`MESSAGE_CREATE`, `PRESENCE_UPDATE`,
-  `VOICE_STATE_UPDATE`). O protocolo está em `src/chat/protocol.ts`.
-- **ChannelRoom** (um por canal de texto): histórico em SQLite.
+  heartbeat, IDENTIFY/RESUME e eventos (`MESSAGE_CREATE`, `MESSAGE_UPDATE`,
+  `MESSAGE_DELETE`, `CHANNEL_CREATE`, `CHANNEL_DELETE`, `PRESENCE_UPDATE`,
+  `VOICE_STATE_UPDATE`). Guarda também a lista de canais e o status de cada um
+  (online, ausente, não perturbe, invisível). O protocolo está em `src/chat/protocol.ts`.
+- **ChannelRoom** (um por canal de texto ou conversa direta): histórico,
+  reações, fixadas, respostas e anexos (até 2 MB cada; imagens grandes são
+  reduzidas no app antes de subir), tudo em SQLite.
+
+As rotas REST estão listadas no topo de `worker/src/index.ts`. Não tem login: o
+"autor" é o nome que o app manda, então só quem mandou consegue editar/apagar
+pelo app, mas alguém mexendo na API na mão consegue se passar por outro nome.
+Conversas diretas só chegam pros dois participantes.
+
+O que fica só no aparelho (localStorage): o que já foi lido, as notificações de
+cada canal, a lista de conversas diretas e os emojis recentes.
 
 Em dev, rode `npm run dev:chat` (porta 8787) junto com o `npm run dev`; o app
 fala direto com `http://127.0.0.1:8787`. Pra publicar:
@@ -62,9 +74,9 @@ npx wrangler login
 npm run deploy:chat
 ```
 
-O Worker publicado fica em `https://monkeycord-chat.monkeycord.workers.dev`; essa URL
-vai em `VITE_CHAT_URL` no painel do Netlify (o build do app desktop já usa ela por padrão). Sem ela, o
-build funciona mas as mensagens ficam só na memória da aba.
+O Worker publicado fica em `https://monkeycord-chat.monkeycord.workers.dev`, que
+é o padrão do build de produção (site e app desktop). Pra apontar pra outro,
+use `VITE_CHAT_URL`.
 
 ## App desktop
 

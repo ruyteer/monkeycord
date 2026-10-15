@@ -1,4 +1,5 @@
 import { initials } from "@/call/Tile";
+import type { VisibleStatus } from "@/chat/protocol";
 import { cn } from "@/lib/utils";
 
 /** Tom fixo por nome, dentro da paleta escura do MonkeyCord. */
@@ -15,7 +16,7 @@ export function nameColor(name: string) {
 type Props = {
   name: string;
   size?: number;
-  status?: "online" | null;
+  status?: VisibleStatus | null;
   speaking?: boolean;
   /** Cor do recorte do indicador de status (fundo de onde o avatar está) */
   ring?: string;
@@ -38,11 +39,50 @@ export function Avatar({ name, size = 32, status, speaking, ring = "var(--mc-sid
       >
         {initials(name)}
       </span>
-      {status === "online" && (
-        <span
-          className="absolute -right-0.5 -bottom-0.5 rounded-full bg-success"
-          style={{ width: dot, height: dot, boxShadow: `0 0 0 3px ${ring}` }}
-        />
+      {status && <StatusDot status={status} size={dot} ring={ring} className="absolute -right-0.5 -bottom-0.5" />}
+    </span>
+  );
+}
+
+export const statusLabel: Record<VisibleStatus | "invisible", string> = {
+  online: "Online",
+  idle: "Ausente",
+  dnd: "Não perturbe",
+  offline: "Offline",
+  invisible: "Invisível",
+};
+
+/** Bolinha de status: verde, lua amarela, traço vermelho ou anel cinza. */
+export function StatusDot({
+  status,
+  size = 10,
+  ring,
+  className,
+}: {
+  status: VisibleStatus | "invisible";
+  size?: number;
+  ring?: string;
+  className?: string;
+}) {
+  const hole = Math.round(size * 0.5);
+  return (
+    <span
+      className={cn(
+        "relative inline-flex shrink-0 items-center justify-center rounded-full",
+        status === "online" && "bg-success",
+        status === "idle" && "bg-warning",
+        status === "dnd" && "bg-destructive",
+        (status === "offline" || status === "invisible") && "bg-zinc-500",
+        className
+      )}
+      style={{ width: size, height: size, boxShadow: ring ? `0 0 0 3px ${ring}` : undefined }}
+    >
+      {status === "idle" && (
+        <span className="absolute rounded-full" style={{ width: hole + 1, height: hole + 1, top: -1, left: -1, background: ring ?? "var(--popover)" }} />
+      )}
+      {status === "dnd" && <span className="rounded-full" style={{ width: hole + 1, height: Math.max(2, size / 5), background: ring ?? "var(--popover)" }} />}
+      {(status === "offline" || status === "invisible") && (
+        <span className="rounded-full" style={{ width: hole, height: hole, background: ring ?? "var(--popover)" }} />
       )}
     </span>
   );

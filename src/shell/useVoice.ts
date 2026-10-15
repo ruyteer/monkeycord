@@ -3,6 +3,9 @@ import { toast } from "sonner";
 import { createMeeting, fetchToken, type Meeting } from "@/call/meeting";
 import type { Channel } from "./data";
 
+/** Chamada preparada no hover vale por 2 min (cada uma vira um participante no RealtimeKit, então não prepara à toa) */
+const PREPARED_TTL = 2 * 60 * 1000;
+
 export type VoiceState =
   | { status: "idle" }
   | { status: "connecting"; channel: Channel }
@@ -22,10 +25,41 @@ export function useVoice(name: string) {
   stateRef.current = state;
   const deafRef = useRef(deafened);
   deafRef.current = deafened;
-  const micRef = useRef(!muted && !deafened);
-  micRef.current = !muted && !deafened;
   // Cada join/leave ganha um número; respostas atrasadas de um join antigo são descartadas
   const seq = useRef(0);
+  /**
+   * Chamada preparada antes do clique (mouse em cima do canal): token + init
+   * já feitos, o clique só faz o join. Uma por vez; sem microfone/câmera,
+   * então não pede permissão nenhuma.
+   */
+  const prepared = useRef<{ room: string; at: number; meeting: Promise<Meeting> } | null>(null);
+
+  const prepare = (room: string) =>
+    fetchToken(name, room).then((r) => createMeeting(r.authToken, { audio: false, video: false }));
+
+  const prefetch = useCallback(
+    (channel: Channel) => {
+      const room = channel.room ?? channel.id;
+      const cur = stateRef.current;
+      if (cur.status !== "idle" && (cur.channel.room ?? cur.channel.id) === room) return;
+      const p = prepared.current;
+      if (p && p.room === room && Date.now() - p.at < PREPARED_TTL) return;
+      const meeting = prepare(room);
+      meeting.catch(() => {
+        if (prepared.current?.meeting === meeting) prepared.current = null;
+      });
+      prepared.current = { room, at: Date.now(), meeting };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [name]
+  );
+
+  const takeMeeting = (room: string) => {
+    const p = prepared.current;
+    prepared.current = null;
+    if (p && p.room === room && Date.now() - p.at < PREPARED_TTL) return p.meeting.catch(() => prepare(room));
+    return prepare(room);
+  };
 
   const leave = useCallback(async () => {
     const s = stateRef.current;
@@ -45,14 +79,17 @@ export function useVoice(name: string) {
       stateRef.current = { status: "connecting", channel };
       setState(stateRef.current);
       try {
-        const { authToken } = await fetchToken(name, channel.room ?? channel.id);
-        const meeting = await createMeeting(authToken, { audio: micRef.current, video: false });
+        const t0 = performance.now();
+        // Sem pedir o microfone no init (era o passo mais lento): ele liga logo depois do join, pelo efeito abaixo
+        const meeting = await takeMeeting(channel.room ?? channel.id);
+        const t1 = performance.now();
         if (my !== seq.current) return;
         await meeting.join();
         if (my !== seq.current) {
           meeting.leave().catch(() => {});
           return;
         }
+        console.info(`[voz] preparo ${Math.round(t1 - t0)}ms · join ${Math.round(performance.now() - t1)}ms`);
         setState({ status: "connected", channel, meeting });
       } catch (err) {
         if (my !== seq.current) return;
@@ -60,6 +97,7 @@ export function useVoice(name: string) {
         toast.error("Não deu pra conectar na voz", { description: (err as Error).message });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [name, leave]
   );
 
@@ -107,7 +145,7 @@ export function useVoice(name: string) {
   };
   const toggleDeafen = () => setDeafened((d) => !d);
 
-  return { state, meeting, join, leave, muted, deafened, toggleMute, toggleDeafen };
+  return { state, meeting, join, leave, prefetch, muted, deafened, toggleMute, toggleDeafen };
 }
 
 export type Voice = ReturnType<typeof useVoice>;

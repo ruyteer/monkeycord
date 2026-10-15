@@ -1,10 +1,12 @@
-import { HEARTBEAT, Op, type ClientPayload, type Dispatch, type ServerPayload } from "./protocol";
+import { HEARTBEAT, Op, type ClientPayload, type Dispatch, type ServerPayload, type Status } from "./protocol";
 
 export type GatewayStatus = "connecting" | "ready" | "offline";
 
 type Options = {
   url: string;
   name: string;
+  /** Status atual, mandado no IDENTIFY */
+  status?: () => Status;
   onDispatch: (e: Dispatch) => void;
   onStatus?: (s: GatewayStatus) => void;
 };
@@ -84,7 +86,7 @@ export class GatewayClient {
       case Op.Hello:
         this.startHeartbeat(p.d.heartbeatInterval);
         if (this.sessionId) this.raw({ op: Op.Resume, d: { sessionId: this.sessionId, seq: this.seq } });
-        else this.raw({ op: Op.Identify, d: { name: this.opts.name } });
+        else this.identify();
         return;
       case Op.HeartbeatAck:
         this.acked = true;
@@ -93,7 +95,7 @@ export class GatewayClient {
         // Sessão expirou: começa do zero (a store recarrega o histórico no READY)
         this.sessionId = null;
         this.seq = 0;
-        setTimeout(() => this.raw({ op: Op.Identify, d: { name: this.opts.name } }), 500 + Math.random() * 1500);
+        setTimeout(() => this.identify(), 500 + Math.random() * 1500);
         return;
       case Op.Reconnect:
         this.ws?.close(4000);
@@ -135,6 +137,10 @@ export class GatewayClient {
 
   private stopHeartbeat() {
     clearTimeout(this.heartbeat);
+  }
+
+  private identify() {
+    this.raw({ op: Op.Identify, d: { name: this.opts.name, status: this.opts.status?.() } });
   }
 
   private raw(p: ClientPayload) {

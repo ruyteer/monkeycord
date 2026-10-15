@@ -1,63 +1,48 @@
+import type { Channel } from "../chat/protocol";
+
+export type { Channel, ChannelKind } from "../chat/protocol";
+
+export const server = { id: "monkeycord", name: "MonkeyCord", short: "MC" };
+
 /**
- * Estrutura do servidor. Por enquanto fixa no código; quando tiver backend,
- * isso passa a vir da API (servidores, categorias, canais, permissões).
+ * Canais iniciais. O gateway cria esses na primeira vez; depois os canais vêm
+ * dele (dá pra criar e apagar pelo menu do servidor). O app usa esta lista
+ * enquanto não chega o READY.
  */
-export type ChannelKind = "text" | "voice";
+export const defaultChannels: Channel[] = [
+  { id: "geral", name: "geral", kind: "text", topic: "Papo solto da galera", position: 0 },
+  { id: "memes", name: "memes", kind: "text", topic: "Só coisa boa", position: 1 },
+  { id: "links", name: "links", kind: "text", topic: "Filmes, séries e o que mais for passar", position: 2 },
+  { id: "voz-geral", name: "Geral", kind: "voice", room: "geral", position: 0 },
+  { id: "voz-cinema", name: "Cinema", kind: "voice", room: "cinema", position: 1 },
+  { id: "voz-jogos", name: "Jogos", kind: "voice", room: "jogos", position: 2 },
+];
 
-export type Channel = {
-  id: string;
-  name: string;
-  kind: ChannelKind;
-  topic?: string;
-  /** Canais de voz: nome da sala no RealtimeKit (o mesmo do ?sala= antigo) */
-  room?: string;
-};
-
-export type Category = { id: string; name: string; channels: Channel[] };
-
-export type Server = { id: string; name: string; short: string; categories: Category[] };
-
-export const server: Server = {
-  id: "monkeycord",
-  name: "MonkeyCord",
-  short: "MC",
-  categories: [
-    {
-      id: "texto",
-      name: "Canais de texto",
-      channels: [
-        { id: "geral", name: "geral", kind: "text", topic: "Papo solto da galera" },
-        { id: "memes", name: "memes", kind: "text", topic: "Só coisa boa" },
-        { id: "links", name: "links", kind: "text", topic: "Filmes, séries e o que mais for passar" },
-      ],
-    },
-    {
-      id: "voz",
-      name: "Canais de voz",
-      channels: [
-        { id: "voz-geral", name: "Geral", kind: "voice", room: "geral" },
-        { id: "voz-cinema", name: "Cinema", kind: "voice", room: "cinema" },
-        { id: "voz-jogos", name: "Jogos", kind: "voice", room: "jogos" },
-      ],
-    },
-  ],
-};
-
-export const allChannels = server.categories.flatMap((c) => c.channels);
-
-export function findChannel(id: string) {
-  return allChannels.find((c) => c.id === id);
-}
+export const categories = [
+  { kind: "text", name: "Canais de texto" },
+  { kind: "voice", name: "Canais de voz" },
+] as const;
 
 /** Link antigo (?sala=xyz): usa o canal de voz dessa sala ou cria um avulso. */
-export function voiceChannelForRoom(room: string): Channel {
+export function voiceChannelForRoom(room: string, channels: Channel[]): Channel {
   const r = room.trim().toLowerCase();
   return (
-    allChannels.find((c) => c.kind === "voice" && c.room === r) ?? {
-      id: `voz-${r}`,
+    channels.find((c) => c.kind === "voice" && (c.room ?? c.id) === r) ?? {
+      id: `voz-${r.replace(/[^\w-]/g, "-")}`,
       name: r,
       kind: "voice",
       room: r,
+      position: 999,
     }
   );
+}
+
+/** Nome de canal no formato do Discord: minúsculo, sem espaço. */
+export function slugChannel(name: string, kind: "text" | "voice") {
+  const n = name.trim().slice(0, 40);
+  if (kind === "voice") return n;
+  return n
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\p{L}\p{N}_-]/gu, "");
 }
