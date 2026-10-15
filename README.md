@@ -44,6 +44,28 @@ Copie `.env.example` para `.env` (local) ou cadastre no painel da hospedagem:
 
 O `.env` e o `credenciais.txt` estão no `.gitignore` — eles têm segredo dentro.
 
+## Chat e presença
+
+Texto, quem está online e quem está em cada canal de voz vêm de um Worker na
+Cloudflare (`worker/`), com Durable Objects:
+
+- **Gateway** (um só): WebSocket no estilo do gateway do Discord — HELLO,
+  heartbeat, IDENTIFY/RESUME e eventos (`MESSAGE_CREATE`, `PRESENCE_UPDATE`,
+  `VOICE_STATE_UPDATE`). O protocolo está em `src/chat/protocol.ts`.
+- **ChannelRoom** (um por canal de texto): histórico em SQLite.
+
+Em dev, rode `npm run dev:chat` (porta 8787) junto com o `npm run dev`; o app
+fala direto com `http://127.0.0.1:8787`. Pra publicar:
+
+```bash
+npx wrangler login
+npm run deploy:chat
+```
+
+O Worker publicado fica em `https://monkeycord-chat.monkeycord.workers.dev`; essa URL
+vai em `VITE_CHAT_URL` no painel do Netlify (o build do app desktop já usa ela por padrão). Sem ela, o
+build funciona mas as mensagens ficam só na memória da aba.
+
 ## App desktop
 
 Fica em [`desktop/`](desktop). É Electron carregando a interface compilada

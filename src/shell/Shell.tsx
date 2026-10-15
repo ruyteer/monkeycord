@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { connectChat, updateVoiceState } from "@/chat/store";
 import { cn } from "@/lib/utils";
 import { CallAudio } from "./CallAudio";
 import { ChannelSidebar } from "./ChannelSidebar";
@@ -27,6 +28,13 @@ export function Shell({ name, inviteRoom, onLogout }: Props) {
   const [selectedId, setSelectedId] = useState(() => extraVoice?.id ?? safeGet("mc:canal") ?? allChannels[0].id);
   const [drawer, setDrawer] = useState(false);
   const [showMembers, setShowMembers] = useState(true);
+
+  // Chat e presença: conecta no gateway com esse nome e avisa em qual voz você está
+  useEffect(() => connectChat(name), [name]);
+  const voiceChannelId = voice.state.status === "idle" ? null : voice.state.channel.id;
+  useEffect(() => {
+    updateVoiceState(voiceChannelId, voice.muted, voice.deafened);
+  }, [voiceChannelId, voice.muted, voice.deafened]);
 
   const selected = findChannel(selectedId) ?? (extraVoice?.id === selectedId ? extraVoice : allChannels[0]);
 

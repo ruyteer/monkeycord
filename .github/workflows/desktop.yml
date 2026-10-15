@@ -59,6 +59,7 @@ jobs:
         working-directory: desktop
         env:
           MONKEYCORD_SITE: ${{ vars.MONKEYCORD_SITE || 'https://monkeycord.netlify.app' }}
+          VITE_CHAT_URL: ${{ vars.VITE_CHAT_URL || 'https://monkeycord-chat.monkeycord.workers.dev' }}
 
       - name: Teste de abertura
         run: npx electron .

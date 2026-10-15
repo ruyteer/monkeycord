@@ -1,6 +1,8 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "monkeycord", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 3000 }
+    { "name": "monkeycord", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 3000 },
+    { "name": "chat", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:chat"], "port": 8787 },
+    { "name": "web-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173 }
   ]
 }

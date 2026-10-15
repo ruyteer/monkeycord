@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { canShareScreen } from "@/call/Controls";
 import type { Meeting } from "@/call/meeting";
 import { useCall } from "@/call/useCall";
+import { usePresence } from "@/chat/store";
 import { cn } from "@/lib/utils";
 import { Avatar } from "./Avatar";
 import { server, type Channel } from "./data";
@@ -75,7 +76,11 @@ export function ChannelSidebar({ me, selected, extraVoice, voice, onSelect, onLo
                   return (
                     <li key={ch.id}>
                       <ChannelRow channel={ch} active={active} onClick={() => onSelect(ch)} />
-                      {inHere && <VoiceMembers voice={voice} me={me} />}
+                      {inHere && voice.meeting ? (
+                        <VoiceMembersLive meeting={voice.meeting} deafened={voice.deafened} />
+                      ) : (
+                        ch.kind === "voice" && <VoiceMembers channelId={ch.id} me={me} connecting={inHere} />
+                      )}
                     </li>
                   );
                 })}
@@ -110,17 +115,35 @@ function ChannelRow({ channel, active, onClick }: { channel: Channel; active: bo
   );
 }
 
-/** Quem está no canal de voz em que você está (sem backend de presença, só dá pra ver o seu). */
-function VoiceMembers({ voice, me }: { voice: Voice; me: string }) {
-  if (!voice.meeting) {
-    return (
-      <div className="flex items-center gap-2 py-1 pr-2 pl-8 opacity-50">
-        <Avatar name={me} size={24} />
-        <span className="truncate text-sm text-muted-foreground">{me}</span>
-      </div>
-    );
-  }
-  return <VoiceMembersLive meeting={voice.meeting} deafened={voice.deafened} />;
+/** Quem está num canal de voz, pela presença do gateway (o seu, enquanto conecta, vem do RealtimeKit depois). */
+function VoiceMembers({ channelId, me, connecting }: { channelId: string; me: string; connecting: boolean }) {
+  const { voice } = usePresence();
+  // A mesma pessoa em duas abas aparece uma vez só
+  const here = new Map(voice.filter((v) => v.channelId === channelId).map((v) => [v.name, v]));
+  const rows = [...here.values()];
+  if (connecting && !here.has(me)) rows.push({ sessionId: "", name: me, channelId, selfMute: false, selfDeaf: false });
+  if (!rows.length) return null;
+  return (
+    <ul className="flex flex-col gap-px py-0.5 pl-6">
+      {rows.map((v) => (
+        <li
+          key={v.name}
+          className={cn(
+            "flex h-8 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground hover:bg-white/5 hover:text-foreground",
+            connecting && v.name === me && "opacity-50"
+          )}
+        >
+          <Avatar name={v.name} size={24} />
+          <span className="min-w-0 flex-1 truncate">{v.name}</span>
+          {v.selfDeaf ? (
+            <HeadphoneOff className="size-4 shrink-0 text-destructive" />
+          ) : (
+            v.selfMute && <MicOff className="size-4 shrink-0 text-destructive" />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function VoiceMembersLive({ meeting, deafened }: { meeting: Meeting; deafened: boolean }) {

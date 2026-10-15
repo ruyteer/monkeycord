@@ -139,7 +139,7 @@ function MessageList({ channel, messages }: { channel: Channel; messages: Messag
         </div>
         <h2 className="mt-2 text-3xl font-bold">Boas-vindas a #{channel.name}!</h2>
         <p className="mt-1 text-muted-foreground">
-          Este é o começo do canal #{channel.name}. Por enquanto as mensagens ficam salvas só neste aparelho.
+          Este é o começo do canal #{channel.name}.
         </p>
       </div>
 
@@ -191,7 +191,15 @@ function MessageRow({ message: m, head }: { message: Message; head: boolean }) {
           {time}
         </time>
       )}
-      <p className="leading-[1.375rem] break-words whitespace-pre-wrap text-foreground/90">{m.content}</p>
+      <p
+        className={cn(
+          "leading-[1.375rem] break-words whitespace-pre-wrap text-foreground/90",
+          m.pending && "text-muted-foreground",
+          m.failed && "text-destructive"
+        )}
+      >
+        {m.content}
+      </p>
     </li>
   );
 }

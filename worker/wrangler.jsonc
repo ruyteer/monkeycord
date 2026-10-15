@@ -1,0 +1,15 @@
+// Backend de chat e presença. Rodar local: npm run dev:chat · Publicar: npm run deploy:chat
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "monkeycord-chat",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "GATEWAY", "class_name": "Gateway" },
+      { "name": "CHANNELS", "class_name": "ChannelRoom" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Gateway", "ChannelRoom"] }],
+  "observability": { "enabled": true }
+}

@@ -8,8 +8,9 @@ const path = require("node:path");
 const raiz = path.join(__dirname, "..", "..");
 const destino = path.join(__dirname, "..", "renderer");
 const site = process.env.MONKEYCORD_SITE || "https://monkeycord.netlify.app";
+const chat = process.env.VITE_CHAT_URL || "https://monkeycord-chat.monkeycord.workers.dev";
 
-console.log(`> compilando a interface apontando para ${site}`);
+console.log(`> compilando a interface apontando para ${site} (chat: ${chat})`);
 // Chama o Vite pelo Node (no Windows o Node não executa .cmd direto)
 const vite = path.join(raiz, "node_modules", "vite", "bin", "vite.js");
 if (!fs.existsSync(vite)) {
@@ -19,7 +20,7 @@ if (!fs.existsSync(vite)) {
 execFileSync(process.execPath, [vite, "build", "--base", "./"], {
   cwd: raiz,
   stdio: "inherit",
-  env: { ...process.env, VITE_API_BASE: site },
+  env: { ...process.env, VITE_API_BASE: site, VITE_CHAT_URL: chat },
 });
 
 fs.rmSync(destino, { recursive: true, force: true });
