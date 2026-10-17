@@ -1,48 +1,53 @@
 # MonkeyCord
 
-Chamada de vídeo e áudio com a galera, em cima do Cloudflare RealtimeKit.
-Tem duas formas de entrar, e as duas caem **nas mesmas salas**:
+Chat, voz, vídeo e tela com a galera, no estilo do Discord. Tem duas formas de
+entrar, e as duas caem **nos mesmos canais**:
 
 - **Site** — https://monkeycord.netlify.app
 - **App do Windows** — instalador no [Releases](https://github.com/ruyteer/monkeycord/releases)
 
 ## Como funciona
 
-O navegador nunca vê as chaves da Cloudflare. Quem entra pede um token pra
-`/api/join`, que roda no servidor, acha (ou cria) a sala pelo nome e devolve um
-token só daquele participante.
-
 ```
-interface (React)  ->  /api/join  ->  Cloudflare RealtimeKit
+interface (React)  ──WebSocket/REST──>  Worker do chat (Cloudflare, plano grátis)
+        │                                   texto, presença, canais, sinalização
+        └──────── WebRTC direto (P2P) ────> as outras pessoas da chamada
 ```
 
-O app desktop usa a mesma interface compilada, só que chama a `/api/join` do
-site publicado. Por isso quem está no app e quem está no navegador se encontram.
+- **Chat e presença**: um Worker com Durable Objects (ver abaixo). Cabe no
+  plano grátis da Cloudflare.
+- **Voz, vídeo e tela**: conexão direta entre as pessoas (WebRTC "mesh",
+  `src/call/meeting.ts`). Não tem servidor de mídia nem conta pra pagar: o
+  Worker só apresenta um ao outro e o áudio/vídeo vai de PC pra PC.
+  - Bom pra grupo de amigos: até umas 8 pessoas com voz e algumas câmeras.
+  - Quem compartilha a tela manda uma cópia pra cada pessoa, então a internet
+    de **upload** de quem transmite é o limite (1080p ≈ 4,5 Mbps por pessoa).
+  - Em algumas redes (operadora com CGNAT dos dois lados, rede de empresa) a
+    conexão direta não fecha. Pra isso dá pra ligar um servidor **TURN**, que
+    repassa a mídia. Cadastre no Worker (todos opcionais):
+
+    ```bash
+    cd worker
+    npx wrangler secret put TURN_URLS        # ex.: turn:seu-servidor:3478,turns:seu-servidor:5349
+    npx wrangler secret put TURN_USERNAME
+    npx wrangler secret put TURN_CREDENTIAL
+    ```
+
+    Opções grátis: um `coturn` numa VM grátis (Oracle Cloud Always Free) ou
+    o plano grátis do metered.ca.
+
+O app desktop usa a mesma interface compilada, apontando pro mesmo Worker. Por
+isso quem está no app e quem está no navegador se encontram.
 
 ## Rodando aqui
 
 ```bash
 npm install
-npm run build
-npm start
+npm run dev:chat   # Worker do chat em http://127.0.0.1:8787
+npm run dev        # interface em http://localhost:5173 (outra aba do terminal)
 ```
 
-Abre em http://localhost:3000. Pra desenvolver com recarga automática, use
-`npm run dev` numa aba e `npm run dev:api` noutra.
-
-### Variáveis de ambiente
-
-Copie `.env.example` para `.env` (local) ou cadastre no painel da hospedagem:
-
-| Variável | O que é |
-| --- | --- |
-| `CF_ACCOUNT_ID` | ID da conta Cloudflare |
-| `CF_API_TOKEN` | API Token com permissão de Realtime |
-| `RTK_APP_ID` | App ID do RealtimeKit |
-| `RTK_PRESET_NAME` | Opcional. Padrão `group_call_participant` |
-| `RTK_MEETING_ID` | Opcional. Força todo mundo numa sala fixa |
-
-O `.env` e o `credenciais.txt` estão no `.gitignore` — eles têm segredo dentro.
+Pra servir o build: `npm run build` e `npm start` (http://localhost:3000).
 
 ## Chat e presença
 
@@ -81,21 +86,29 @@ use `VITE_CHAT_URL`.
 ## App desktop
 
 Fica em [`desktop/`](desktop). É Electron carregando a interface compilada
-localmente (não é uma janela com o site dentro).
+localmente (não é uma janela com o site dentro), igual ao Discord.
 
 O que ele faz de diferente do navegador:
 
+- **Barra de título própria** e janela no visual do app; seta verde quando tem
+  atualização pronta.
+- **Bandeja do Windows**: o X esconde a janela e o app continua rodando (dá pra
+  mudar em Configurações > Windows e atualizações). Menu da bandeja com mutar,
+  desativar áudio, sair da voz e fechar.
+- **Atalhos globais**: Ctrl+Shift+M (mutar) e Ctrl+Shift+D (desativar áudio)
+  funcionam com o app minimizado.
+- **Selo vermelho no ícone da barra de tarefas** com as menções, e o ícone
+  pisca quando alguém te marca.
+- **Abrir junto com o Windows** (já começa escondido na bandeja).
+- **Links `monkeycord://sala/<nome>`** abrem o app direto no canal de voz.
 - **Compartilha a tela com o áudio do Windows junto** (`loopback`), que é o que
-  falta no navegador pra passar filme com som.
-- Seletor próprio de tela ou janela, com miniaturas.
-- **Botão de som da transmissão na barra da chamada**: liga e desliga o áudio
-  que vai junto com a tela, a qualquer momento, sem parar de compartilhar.
-- Atenção: o Windows só entrega o som da **saída inteira**. Não dá pra mandar o
-  filme e deixar o Discord de fora — por isso o botão, que corta o som todo
-  quando ele estiver atrapalhando. Pra ter o filme sem o Discord junto, mude a
-  saída do Discord pra outro dispositivo nas configurações de som do Windows
-  (o `loopback` pega só o dispositivo padrão).
-- Atualiza sozinho pelo GitHub Releases.
+  falta no navegador pra passar filme com som. Seletor próprio de tela ou
+  janela, com miniaturas, e botão pra ligar/desligar o som da transmissão.
+- Atenção: o Windows só entrega o som da **saída inteira**. Pra ter o filme sem
+  a voz da galera junto, mude a saída do MonkeyCord (Configurações > Voz e
+  vídeo > Dispositivo de saída) pra outro aparelho, ou use fone.
+- **Atualiza sozinho** pelo GitHub Releases (procura a cada 4 horas e dá pra
+  procurar na mão nas configurações).
 
 ```bash
 cd desktop

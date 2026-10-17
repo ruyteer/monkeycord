@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { FileText, Loader2, PlusCircle, Smile, X } from "lucide-react";
 import { toast } from "sonner";
 import type { Attachment } from "@/chat/protocol";
-import { sendMessage, uploadFile, type Message } from "@/chat/store";
+import { sendMessage, sendTyping, typingIn, uploadFile, useChatVersion, type Message } from "@/chat/store";
 import { cn } from "@/lib/utils";
 import { Avatar, nameColor } from "./Avatar";
 import { EmojiPicker } from "./EmojiPicker";
@@ -226,6 +226,7 @@ export function Composer({ channelId, placeholder, me, names, replyTo, onCancelR
             onChange={(e) => {
               setText(e.target.value);
               trackMention(e.target.value, e.target.selectionStart);
+              if (e.target.value.trim()) sendTyping(channelId);
             }}
             onPaste={(e) => {
               const files = [...e.clipboardData.files];
@@ -288,6 +289,30 @@ export function Composer({ channelId, placeholder, me, names, replyTo, onCancelR
           </Popover>
         </div>
       </div>
+      <TypingLine channelId={channelId} />
+    </div>
+  );
+}
+
+/** "Fulano está digitando..." embaixo da caixa de texto. */
+function TypingLine({ channelId }: { channelId: string }) {
+  useChatVersion();
+  const names = typingIn(channelId);
+  if (!names.length) return null;
+  const who =
+    names.length === 1
+      ? <><b>{names[0]}</b> está digitando</>
+      : names.length <= 3
+        ? <><b>{names.slice(0, -1).join(", ")}</b> e <b>{names.at(-1)}</b> estão digitando</>
+        : "Várias pessoas estão digitando";
+  return (
+    <div className="absolute bottom-0.5 left-4 flex h-5 items-center gap-1.5 text-xs text-foreground/80">
+      <span className="flex gap-0.5">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="size-1.5 animate-bounce rounded-full bg-foreground/70" style={{ animationDelay: `${i * 0.15}s` }} />
+        ))}
+      </span>
+      <span>{who}...</span>
     </div>
   );
 }

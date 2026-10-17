@@ -3,32 +3,38 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Shell } from "./shell/Shell";
+import { TitleBar } from "./shell/TitleBar";
 
 export default function App() {
   const [name, setName] = useState(() => safeGet("nome"));
   const [inviteRoom] = useState(() => new URLSearchParams(location.search).get("sala") ?? undefined);
 
-  if (name)
-    return (
-      <Shell
-        name={name}
-        inviteRoom={inviteRoom}
-        onLogout={() => {
-          safeSet("nome", "");
-          setName("");
-        }}
-      />
-    );
-
   return (
-    <div className="lobby-glow flex h-full flex-col items-center justify-center overflow-y-auto px-4 py-8">
-      <Lobby
-        invite={inviteRoom}
-        onReady={(n) => {
-          safeSet("nome", n);
-          setName(n);
-        }}
-      />
+    <div className="flex h-full flex-col">
+      {/* Só aparece no app desktop: arrasta a janela e mostra atualização pronta */}
+      <TitleBar />
+      <div className="min-h-0 flex-1">
+        {name ? (
+          <Shell
+            name={name}
+            inviteRoom={inviteRoom}
+            onLogout={() => {
+              safeSet("nome", "");
+              setName("");
+            }}
+          />
+        ) : (
+          <div className="lobby-glow flex h-full flex-col items-center justify-center overflow-y-auto px-4 py-8">
+            <Lobby
+              invite={inviteRoom}
+              onReady={(n) => {
+                safeSet("nome", n);
+                setName(n);
+              }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

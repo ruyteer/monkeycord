@@ -93,6 +93,10 @@ export function connectChat(name: string) {
     name,
     status: () => myStatus,
     onDispatch,
+    onEphemeral: (p) => {
+      if (p.op === Op.Signal) signalListeners.forEach((l) => l(p.d.from, p.d.data));
+      else typingArrived(p.d.channelId, p.d.name);
+    },
     onStatus: (status) => {
       presence = { ...presence, status };
       emit();
@@ -106,6 +110,75 @@ export function connectChat(name: string) {
     presence = OFFLINE;
     emit();
   };
+}
+
+/* ---------- Voz P2P: sinalização pelo gateway ---------- */
+
+type SignalListener = (from: string, data: unknown) => void;
+const signalListeners = new Set<SignalListener>();
+
+export function onSignal(fn: SignalListener) {
+  signalListeners.add(fn);
+  return () => void signalListeners.delete(fn);
+}
+
+export function sendSignal(to: string, data: unknown) {
+  client?.send({ op: Op.Signal, d: { to, data } });
+}
+
+/** Id desta sessão no gateway (null antes do READY ou desconectado). */
+export function getSessionId() {
+  return client?.session ?? null;
+}
+
+/** Presença atual, fora do React (o motor da voz usa). */
+export function getPresence() {
+  return presence;
+}
+
+export { subscribe as subscribeChat };
+
+let iceCache: Promise<RTCIceServer[]> | null = null;
+/** STUN/TURN vindos do Worker (com STUN do Google se der erro). */
+export function getIceServers() {
+  iceCache ??= api<{ iceServers: RTCIceServer[] }>("/api/ice")
+    .then((r) => r.iceServers)
+    .catch(() => {
+      iceCache = null;
+      return [{ urls: "stun:stun.l.google.com:19302" }];
+    });
+  return iceCache;
+}
+
+/* ---------- Digitando ---------- */
+
+/** canal → nome → até quando mostrar */
+const typing = new Map<string, Map<string, number>>();
+const TYPING_MS = 8000;
+
+function typingArrived(channelId: string, name: string) {
+  const byName = typing.get(channelId) ?? new Map<string, number>();
+  byName.set(name, Date.now() + TYPING_MS);
+  typing.set(channelId, byName);
+  emit();
+  setTimeout(emit, TYPING_MS + 50);
+}
+
+/** Quem está digitando agora nesse canal. */
+export function typingIn(channelId: string) {
+  const now = Date.now();
+  const byName = typing.get(channelId);
+  if (!byName) return [];
+  return [...byName].filter(([, until]) => until > now).map(([n]) => n);
+}
+
+const lastTyping = new Map<string, number>();
+/** Avisa que você está digitando (no máximo a cada 6s por canal, igual ao Discord). */
+export function sendTyping(channelId: string) {
+  const now = Date.now();
+  if (now - (lastTyping.get(channelId) ?? 0) < 6000) return;
+  lastTyping.set(channelId, now);
+  client?.send({ op: Op.Typing, d: { channelId } });
 }
 
 /** Em qual canal de voz você está (null = nenhum) e se está mudo/surdo. */
@@ -140,6 +213,7 @@ function onDispatch(e: Dispatch) {
       client?.send({ op: Op.PresenceUpdate, d: { status: myStatus } });
       return;
     case "MESSAGE_CREATE":
+      typing.get(e.d.channelId)?.delete(e.d.author);
       insert(e.d);
       arrived(e.d);
       break;
@@ -182,6 +256,7 @@ function arrived(m: WireMessage) {
   if (m.author === me) return;
   latest.set(m.channelId, Math.max(latest.get(m.channelId) ?? 0, m.ts));
   const mentioned = mentionsMe(m.content) || isDm(m.channelId);
+  lastTyping.delete(m.channelId);
   const reading = active === m.channelId && !document.hidden;
   if (reading) markRead(m.channelId);
   else if (mentioned) mentions.set(m.channelId, (mentions.get(m.channelId) ?? 0) + 1);
@@ -200,6 +275,7 @@ function arrived(m: WireMessage) {
     const n = new Notification(where, { body: text.slice(0, 140), tag: m.channelId, silent: false });
     n.onclick = () => {
       window.focus();
+      window.monkeycord?.show();
       openChannelHandler?.(m.channelId);
       n.close();
     };
@@ -351,6 +427,11 @@ export function useMyStatus() {
 /** Muda a cada evento: pra quem precisa recalcular não lidas/notificações. */
 export function useChatVersion() {
   return useSyncExternalStore(subscribe, () => version);
+}
+
+/** Até quando você já leu esse canal (pra linha de "NOVAS"). */
+export function lastReadOf(channelId: string) {
+  return lastRead[channelId] ?? 0;
 }
 
 export function unreadState(channelId: string) {

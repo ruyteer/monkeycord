@@ -21,6 +21,7 @@
  *   GET    /api/channels/:id/search?q=                busca no texto
  *   POST   /api/channels/:id/files                    corpo = arquivo (X-Filename, X-Width, X-Height)
  *   GET    /api/channels/:id/files/:fid               baixa o arquivo
+ *   GET    /api/ice                                   servidores STUN/TURN pra voz (P2P)
  *
  * Não tem login: "autor" é o nome que o app manda. Serve pra galera, não pra
  * um servidor aberto.
@@ -49,6 +50,15 @@ import { defaultChannels } from "../../src/shell/data";
 export interface Env {
   GATEWAY: DurableObjectNamespace<Gateway>;
   CHANNELS: DurableObjectNamespace<ChannelRoom>;
+  /**
+   * TURN opcional (wrangler secret put ...): repassa a mídia quando duas
+   * pessoas não conseguem se ligar direto (alguns roteadores/operadoras).
+   * Ex.: um servidor coturn seu, ou o plano grátis do metered.ca.
+   * TURN_URLS separadas por vírgula.
+   */
+  TURN_URLS?: string;
+  TURN_USERNAME?: string;
+  TURN_CREDENTIAL?: string;
 }
 
 const HEARTBEAT_MS = 30_000;
@@ -119,6 +129,21 @@ async function route(req: Request, env: Env): Promise<Response> {
     return gw.fetch(req);
   }
   if (path === "/") return new Response("MonkeyCord chat no ar", { headers: cors });
+
+  // Voz é P2P: o app só precisa saber por onde achar o caminho até os outros
+  if (path === "/api/ice") {
+    const iceServers: { urls: string | string[]; username?: string; credential?: string }[] = [
+      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+    ];
+    if (env.TURN_URLS) {
+      iceServers.push({
+        urls: env.TURN_URLS.split(",").map((u) => u.trim()).filter(Boolean),
+        username: env.TURN_USERNAME,
+        credential: env.TURN_CREDENTIAL,
+      });
+    }
+    return json({ iceServers });
+  }
 
   // Canais
   if (path === "/api/channels") {
@@ -690,6 +715,43 @@ export class Gateway extends DurableObject<Env> {
         }
         send(ws, { op: Op.Dispatch, t: "RESUMED", s: this.seq, d: null });
         this.presenceChanged(row.name, before);
+        return;
+      }
+
+      case Op.Signal: {
+        // Repassa a sinalização WebRTC só entre duas sessões no mesmo canal de voz
+        if (!att.sid) return;
+        const from = this.session(att.sid);
+        const to = typeof p.d?.to === "string" ? this.session(p.d.to) : null;
+        if (!from?.voice || !to || to.voice !== from.voice) return;
+        const data = JSON.stringify(p.d.data ?? null);
+        if (data.length > 64_000) return;
+        const frame = `{"op":${Op.Signal},"d":{"from":${JSON.stringify(from.id)},"data":${data}}}`;
+        for (const other of this.ctx.getWebSockets()) {
+          if (attachment(other).sid !== to.id) continue;
+          try {
+            other.send(frame);
+          } catch {
+            /* caiu; o outro lado refaz a conexão */
+          }
+        }
+        return;
+      }
+
+      case Op.Typing: {
+        if (!att.sid || !att.name) return;
+        const channelId = typeof p.d?.channelId === "string" ? p.d.channelId.slice(0, 64) : "";
+        if (!channelId) return;
+        const frame = JSON.stringify({ op: Op.Typing, d: { channelId, name: att.name } });
+        for (const other of this.ctx.getWebSockets()) {
+          const o = attachment(other);
+          if (!o.sid || o.name === att.name) continue;
+          try {
+            other.send(frame);
+          } catch {
+            /* tanto faz */
+          }
+        }
         return;
       }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BellRing,
   Check,
@@ -21,10 +21,12 @@ import {
   UserPen,
   Video as VideoIcon,
   Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { canShareScreen } from "@/call/Controls";
+import { usePrefs } from "@/call/devices";
 import type { Meeting } from "@/call/meeting";
 import { useCall } from "@/call/useCall";
 import type { Status } from "@/chat/protocol";
@@ -50,6 +52,8 @@ import { categories, server, type Channel } from "./data";
 import { Tip } from "./ServerRail";
 import { ContextMenu, Menu, MenuItem, MenuLabel, MenuRadio, MenuSeparator, Modal, ModalButton, Popover } from "./ui";
 import type { Voice } from "./useVoice";
+import { openSettings } from "./Settings";
+import { VoiceUserMenu } from "./VoiceUserMenu";
 
 type Props = {
   me: string;
@@ -78,7 +82,7 @@ export function ChannelSidebar(props: Props) {
   );
 }
 
-function ServerChannels({ me, selected, channels, voice, onSelect, onPrefetchVoice }: Props) {
+function ServerChannels({ me, selected, channels, voice, onSelect, onPrefetchVoice, onOpenDm }: Props) {
   useChatVersion();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState<"text" | "voice" | null>(null);
@@ -175,7 +179,7 @@ function ServerChannels({ me, selected, channels, voice, onSelect, onPrefetchVoi
                         onPrefetch={() => ch.kind === "voice" && onPrefetchVoice(ch)}
                       />
                       {inHere && voice.meeting ? (
-                        <VoiceMembersLive meeting={voice.meeting} deafened={voice.deafened} />
+                        <VoiceMembersLive meeting={voice.meeting} deafened={voice.deafened} onOpenDm={onOpenDm} />
                       ) : (
                         ch.kind === "voice" && <VoiceMembers channelId={ch.id} me={me} connecting={inHere} />
                       )}
@@ -530,33 +534,59 @@ function VoiceMembers({ channelId, me, connecting }: { channelId: string; me: st
   );
 }
 
-function VoiceMembersLive({ meeting, deafened }: { meeting: Meeting; deafened: boolean }) {
+function VoiceMembersLive({ meeting, deafened, onOpenDm }: { meeting: Meeting; deafened: boolean; onOpenDm: (name: string) => void }) {
   const { people, speaking } = useCall(meeting);
+  const { voice } = usePresence();
+  const prefs = usePrefs();
   return (
     <ul className="flex flex-col gap-px py-0.5 pl-6">
-      {people.map((p) => (
-        <li
-          key={p.id}
-          className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground hover:bg-white/5 hover:text-foreground"
-        >
-          <Avatar name={p.name} size={24} speaking={p.id === speaking && p.audioEnabled} />
-          <span className="min-w-0 flex-1 truncate">{p.name}</span>
-          {p.screenEnabled && (
-            <span className="rounded-sm bg-destructive px-1 text-[10px] font-bold text-white uppercase">Ao vivo</span>
-          )}
-          {p.videoEnabled && <VideoIcon className="size-4 shrink-0" />}
-          {p.isSelf && deafened ? (
-            <HeadphoneOff className="size-4 shrink-0 text-destructive" />
-          ) : (
-            !p.audioEnabled && <MicOff className="size-4 shrink-0 text-destructive" />
-          )}
-        </li>
-      ))}
+      {people.map((p) => {
+        const deaf = p.isSelf ? deafened : !!voice.find((v) => v.sessionId === p.id)?.selfDeaf;
+        return (
+          <VoiceUserMenu key={p.id} name={p.name} isSelf={p.isSelf} onOpenDm={onOpenDm}>
+            <li className="flex h-8 items-center gap-2 rounded-md px-2 text-sm text-muted-foreground hover:bg-white/5 hover:text-foreground">
+              <Avatar name={p.name} size={24} speaking={p.id === speaking && p.audioEnabled} />
+              <span className="min-w-0 flex-1 truncate">{p.name}</span>
+              {p.screenEnabled && (
+                <span className="rounded-sm bg-destructive px-1 text-[10px] font-bold text-white uppercase">Ao vivo</span>
+              )}
+              {p.videoEnabled && <VideoIcon className="size-4 shrink-0" />}
+              {!p.isSelf && prefs.localMute[p.name] && <VolumeX className="size-4 shrink-0 text-destructive" />}
+              {deaf ? (
+                <HeadphoneOff className="size-4 shrink-0 text-destructive" />
+              ) : (
+                !p.audioEnabled && <MicOff className="size-4 shrink-0 text-destructive" />
+              )}
+            </li>
+          </VoiceUserMenu>
+        );
+      })}
     </ul>
   );
 }
 
+/** Ping até a pessoa mais lenta da chamada, atualizado a cada 3s. */
+function usePing(meeting: Meeting | null) {
+  const [ping, setPing] = useState<{ ms?: number; bad: boolean } | null>(null);
+  useEffect(() => {
+    if (!meeting) return setPing(null);
+    const tick = async () => {
+      const list = await meeting.stats();
+      const rtts = list.map((s) => s.rtt).filter((x): x is number => x != null);
+      setPing({
+        ms: rtts.length ? Math.round(Math.max(...rtts)) : undefined,
+        bad: list.some((s) => s.state === "failed" || s.state === "disconnected"),
+      });
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 3000);
+    return () => window.clearInterval(id);
+  }, [meeting]);
+  return ping;
+}
+
 function VoiceConnected({ voice, onOpen }: { voice: Voice; onOpen: (c: Channel) => void }) {
+  const ping = usePing(voice.meeting);
   if (voice.state.status === "idle") return null;
   const { channel } = voice.state;
   const connecting = voice.state.status === "connecting";
@@ -566,7 +596,10 @@ function VoiceConnected({ voice, onOpen }: { voice: Voice; onOpen: (c: Channel) 
         <Signal className={cn("size-4.5 shrink-0", connecting ? "text-warning" : "text-success")} />
         <div className="min-w-0 flex-1">
           <p className={cn("text-sm font-semibold", connecting ? "text-warning" : "text-success")}>
-            {connecting ? "Conectando..." : "Voz conectada"}
+            {connecting ? "Conectando..." : ping?.bad ? "Reconectando alguém..." : "Voz conectada"}
+            {!connecting && ping?.ms != null && (
+              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground tabular-nums">{ping.ms} ms</span>
+            )}
           </p>
           <button
             type="button"
@@ -706,6 +739,12 @@ function UserPanel({ name, voice, onLogout }: { name: string; voice: Voice; onLo
           </button>
         }
       >
+        <MenuItem icon={<Settings />} onClick={() => openSettings("conta")}>
+          Configurações de usuário
+        </MenuItem>
+        <MenuItem icon={<Mic />} onClick={() => openSettings("voz")}>
+          Voz e vídeo
+        </MenuItem>
         <MenuItem icon={<UserPen />} onClick={onLogout}>
           Trocar de nome
         </MenuItem>

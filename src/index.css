@@ -254,3 +254,12 @@ body::before {
     background: transparent;
   }
 }
+
+/* Barra de título do app desktop: arrastar a janela por ela */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-no-drag,
+.app-drag button {
+  -webkit-app-region: no-drag;
+}

@@ -40,8 +40,11 @@ export function Video({ track, mirror, fit = "cover", className, autoPip, main }
   );
 }
 
-/** Toca o áudio de um participante (microfone ou áudio do compartilhamento). */
-export function Audio({ track }: { track?: MediaStreamTrack }) {
+/**
+ * Toca o áudio de um participante (microfone ou áudio do compartilhamento).
+ * volume de 0 a 1 (o <audio> não passa disso); sinkId = fone/caixa escolhido nas configurações.
+ */
+export function Audio({ track, volume = 1, sinkId }: { track?: MediaStreamTrack; volume?: number; sinkId?: string }) {
   const ref = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -49,5 +52,12 @@ export function Audio({ track }: { track?: MediaStreamTrack }) {
     el.srcObject = track ? new MediaStream([track]) : null;
     if (track) el.play().catch(() => {});
   }, [track]);
+  useEffect(() => {
+    if (ref.current) ref.current.volume = Math.max(0, Math.min(1, volume));
+  }, [volume]);
+  useEffect(() => {
+    const el = ref.current as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (el?.setSinkId && sinkId) el.setSinkId(sinkId === "default" ? "" : sinkId).catch(() => {});
+  }, [sinkId]);
   return <audio ref={ref} autoPlay />;
 }

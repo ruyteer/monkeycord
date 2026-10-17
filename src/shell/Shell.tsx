@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { badgeImage, desktop } from "@/desktop";
 import { isDm } from "@/chat/protocol";
 import {
   connectChat,
+  markRead,
+  unreadState,
+  useChatVersion,
   onOpenChannel,
   openDm,
   preloadChannels,
@@ -17,7 +21,9 @@ import { CallAudio } from "./CallAudio";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { voiceChannelForRoom, type Channel } from "./data";
 import { MemberList } from "./MemberList";
+import { QuickSwitcher } from "./QuickSwitcher";
 import { ServerRail } from "./ServerRail";
+import { openSettings, SettingsHost } from "./Settings";
 import { TextChannel, type TextView } from "./TextChannel";
 import { useVoice } from "./useVoice";
 import { VoiceStage } from "./VoiceStage";
@@ -51,10 +57,12 @@ export function Shell({ name, inviteRoom, onLogout }: Props) {
   const [lastDm, setLastDm] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [showMembers, setShowMembers] = useState(true);
+  const [switcher, setSwitcher] = useState(false);
 
   // Chat e presença: conecta no gateway com esse nome e avisa em qual voz você está
   useEffect(() => connectChat(name), [name]);
-  const voiceChannelId = voice.state.status === "idle" ? null : voice.state.channel.id;
+  // Só avisa que entrou depois de a chamada estar pronta pra receber as conexões dos outros
+  const voiceChannelId = voice.state.status === "connected" ? voice.state.channel.id : null;
   useEffect(() => {
     updateVoiceState(voiceChannelId, voice.muted, voice.deafened);
   }, [voiceChannelId, voice.muted, voice.deafened]);
@@ -132,8 +140,79 @@ export function Shell({ name, inviteRoom, onLogout }: Props) {
 
   const openMenu = () => setDrawer(true);
 
+  // Lista na ordem da barra lateral, pra Alt+↑/↓
+  const ordered = [...allChannels].sort((a, b) => (a.kind === b.kind ? a.position - b.position : a.kind === "text" ? -1 : 1));
+
+  // Atalhos de teclado (os de mutar também chegam do app desktop com ele minimizado)
+  const latest = useRef({ voice, ordered, serverChannel, view, place });
+  latest.current = { voice, ordered, serverChannel, view, place };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const { voice, ordered, serverChannel, view, place } = latest.current;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSwitcher((o) => !o);
+      } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        voice.toggleMute();
+      } else if (ctrl && e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        voice.toggleDeafen();
+      } else if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown") && place.mode === "server") {
+        e.preventDefault();
+        const i = ordered.findIndex((c) => c.id === serverChannel.id);
+        const next = ordered[(i + (e.key === "ArrowDown" ? 1 : -1) + ordered.length) % ordered.length];
+        // Alt+setas só passeia pelos canais de texto (não entra em voz sem querer)
+        if (next.kind === "text") select(next);
+        else setPlace({ mode: "server", id: next.id });
+      } else if (e.key === "Escape" && view && !document.querySelector("[role=dialog]")) {
+        markRead(view.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // App desktop: bandeja, atalhos globais, links monkeycord:// e selo na barra de tarefas
+  useEffect(
+    () =>
+      desktop?.onCommand((cmd) => {
+        const { voice } = latest.current;
+        if (cmd === "toggleMute") voice.toggleMute();
+        else if (cmd === "toggleDeafen") voice.toggleDeafen();
+        else if (cmd === "disconnect") void voice.leave();
+        else if (cmd === "openSettings") openSettings("conta");
+        else if (cmd.startsWith("open:")) select(voiceChannelForRoom(cmd.slice(5), latest.current.ordered));
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  useEffect(() => {
+    desktop?.setVoiceState({ inVoice: voice.state.status !== "idle", muted: voice.muted, deafened: voice.deafened });
+  }, [voice.state.status, voice.muted, voice.deafened]);
+  useChatVersion();
+  const mentionCount = [...channels.filter((c) => c.kind === "text").map((c) => c.id), ...dms.map((d) => d.id)].reduce(
+    (n, id) => n + unreadState(id).mentions,
+    0
+  );
+  const anyUnread = channels.some((c) => c.kind === "text" && unreadState(c.id).unread) || dms.some((d) => unreadState(d.id).unread);
+  const prevMentions = useRef(0);
+  useEffect(() => {
+    if (!desktop) return;
+    desktop.setBadge(mentionCount, anyUnread, mentionCount ? badgeImage(mentionCount) : null);
+    if (mentionCount > prevMentions.current && !document.hasFocus()) desktop.flash();
+    prevMentions.current = mentionCount;
+  }, [mentionCount, anyUnread]);
+  // No navegador: (2) no título da aba
+  useEffect(() => {
+    if (desktop) return;
+    document.title = mentionCount ? `(${mentionCount}) MonkeyCord` : anyUnread ? "• MonkeyCord" : "MonkeyCord";
+  }, [mentionCount, anyUnread]);
+
   return (
-    <div className="flex h-full overflow-hidden bg-rail">
+    <div className="relative flex h-full min-h-0 overflow-hidden bg-rail">
       {/* Fundo escuro da gaveta no celular */}
       <div
         onClick={() => setDrawer(false)}
@@ -191,6 +270,15 @@ export function Shell({ name, inviteRoom, onLogout }: Props) {
       </main>
 
       {voice.meeting && <CallAudio meeting={voice.meeting} deafened={voice.deafened} />}
+      <QuickSwitcher
+        open={switcher}
+        onOpenChange={setSwitcher}
+        me={name}
+        channels={ordered}
+        onChannel={select}
+        onPerson={startDm}
+      />
+      <SettingsHost name={name} meeting={voice.meeting} onLogout={() => void logout()} />
     </div>
   );
 }

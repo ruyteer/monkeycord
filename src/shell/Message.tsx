@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Avatar, nameColor } from "./Avatar";
 import { EmojiPicker, QUICK_REACTIONS } from "./EmojiPicker";
+import { Markdown } from "./Markdown";
 import { Tip } from "./ServerRail";
 import { ContextMenu, Menu, MenuItem, MenuSeparator, Modal, ModalButton, Popover } from "./ui";
 import { UserPopover } from "./UserPopover";
@@ -135,7 +136,7 @@ export function MessageRow({ message: m, me, head, editing, onEdit, onReply, onO
         <EditBox message={m} onDone={() => onEdit(false)} />
       ) : (
         m.content && (
-          <p
+          <div
             className={cn(
               "leading-[1.375rem] break-words whitespace-pre-wrap text-foreground/90",
               m.pending && "text-muted-foreground",
@@ -144,7 +145,7 @@ export function MessageRow({ message: m, me, head, editing, onEdit, onReply, onO
           >
             <RichText text={m.content} me={me} />
             {m.editedTs && <span className="ml-1 text-[10px] text-muted-foreground select-none">(editado)</span>}
-          </p>
+          </div>
         )
       )}
 
@@ -399,31 +400,9 @@ function EditBox({ message: m, onDone }: { message: Message; onDone: () => void 
   );
 }
 
-const TOKEN = /(https?:\/\/[^\s<]+[^\s<.,;:!?)"'\]]|@[\p{L}\p{N}_.-]+)/gu;
-
-/** Texto com links clicáveis e menções destacadas. */
+/** Texto da mensagem com a formatação do Discord (ver Markdown.tsx). */
 export function RichText({ text, me }: { text: string; me: string }) {
-  const parts = text.split(TOKEN);
-  return (
-    <>
-      {parts.map((p, i) => {
-        if (i % 2 === 0) return <Fragment key={i}>{p}</Fragment>;
-        if (p.startsWith("@")) {
-          const self = p.slice(1).toLowerCase() === me.toLowerCase() || /^@(everyone|todos)$/i.test(p);
-          return (
-            <span key={i} className={cn("rounded px-0.5 font-medium", self ? "bg-warning/25 text-warning" : "bg-white/10 text-foreground")}>
-              {p}
-            </span>
-          );
-        }
-        return (
-          <a key={i} href={p} target="_blank" rel="noreferrer noopener" className="text-sky-300 hover:underline">
-            {p}
-          </a>
-        );
-      })}
-    </>
-  );
+  return <Markdown text={text} me={me} />;
 }
 
 function AttachmentView({ channelId, attachment: a }: { channelId: string; attachment: Attachment }) {

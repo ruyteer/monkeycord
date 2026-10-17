@@ -18,6 +18,10 @@ export const Op = {
   InvalidSession: 9,
   Hello: 10,
   HeartbeatAck: 11,
+  /** Sinalização da voz (WebRTC) entre duas sessões do mesmo canal. Não tem `s`, não fica guardado. */
+  Signal: 12,
+  /** "Fulano está digitando..." (também sem `s`) */
+  Typing: 13,
 } as const;
 
 /** Heartbeat e resposta são strings fixas: o Durable Object responde sem acordar. */
@@ -104,7 +108,9 @@ export type ServerPayload =
   | { op: typeof Op.Hello; d: { heartbeatInterval: number } }
   | { op: typeof Op.HeartbeatAck }
   | { op: typeof Op.InvalidSession; d: boolean }
-  | { op: typeof Op.Reconnect };
+  | { op: typeof Op.Reconnect }
+  | { op: typeof Op.Signal; d: { from: string; data: unknown } }
+  | { op: typeof Op.Typing; d: { channelId: string; name: string } };
 
 export type VoiceUpdate = { channelId: string | null; selfMute: boolean; selfDeaf: boolean };
 
@@ -113,7 +119,9 @@ export type ClientPayload =
   | { op: typeof Op.Identify; d: { name: string; status?: Status } }
   | { op: typeof Op.PresenceUpdate; d: { status: Status } }
   | { op: typeof Op.Resume; d: { sessionId: string; seq: number } }
-  | { op: typeof Op.VoiceStateUpdate; d: VoiceUpdate };
+  | { op: typeof Op.VoiceStateUpdate; d: VoiceUpdate }
+  | { op: typeof Op.Signal; d: { to: string; data: unknown } }
+  | { op: typeof Op.Typing; d: { channelId: string } };
 
 /** Códigos de fechamento do servidor (4000–4999) */
 export const Close = {

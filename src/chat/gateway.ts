@@ -8,6 +8,8 @@ type Options = {
   /** Status atual, mandado no IDENTIFY */
   status?: () => Status;
   onDispatch: (e: Dispatch) => void;
+  /** Mensagens sem `s` (sinalização da voz, digitando) */
+  onEphemeral?: (p: Extract<ServerPayload, { op: typeof Op.Signal | typeof Op.Typing }>) => void;
   onStatus?: (s: GatewayStatus) => void;
 };
 
@@ -59,6 +61,10 @@ export class GatewayClient {
     };
   }
 
+  get session() {
+    return this.ready ? this.sessionId : null;
+  }
+
   /** Só manda depois do READY/RESUMED; o que se perder é reenviado pela store ao reconectar. */
   send(p: ClientPayload) {
     if (this.ready && this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(p));
@@ -99,6 +105,10 @@ export class GatewayClient {
         return;
       case Op.Reconnect:
         this.ws?.close(4000);
+        return;
+      case Op.Signal:
+      case Op.Typing:
+        this.opts.onEphemeral?.(p);
         return;
       case Op.Dispatch:
         this.seq = Math.max(this.seq, p.s);

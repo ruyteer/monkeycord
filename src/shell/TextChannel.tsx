@@ -2,6 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode 
 import { Bell, BellOff, Hash, Loader2, Menu as MenuIcon, Pin, Search, Upload, Users, X } from "lucide-react";
 import {
   fetchPins,
+  lastReadOf,
   loadOlder,
   notifyLevel,
   searchMessages,
@@ -237,6 +238,8 @@ function MessageList({
   const stick = useRef(true);
   const [older, setOlder] = useState<"idle" | "loading" | "end">("idle");
   const keep = useRef<number | null>(null);
+  // Até onde você tinha lido quando abriu o canal: a linha "NOVAS" fica antes da primeira depois disso
+  const [since, setSince] = useState(() => lastReadOf(view.id));
 
   // Fica grudado no fim enquanto você não rolar pra cima; ao carregar antigas, mantém a posição
   useLayoutEffect(() => {
@@ -250,6 +253,7 @@ function MessageList({
   useEffect(() => {
     stick.current = true;
     setOlder("idle");
+    setSince(lastReadOf(view.id));
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [view.id]);
@@ -303,13 +307,22 @@ function MessageList({
       )}
 
       <ol className={cn("pb-6", older !== "end" && messages.length >= 50 && "mt-auto")}>
-        {messages.map((m, i) => {
+        {messages.map((m, i, all) => {
           const prev = messages[i - 1];
           const newDay = !prev || !sameDay(prev.ts, m.ts);
           const head = newDay || prev.author !== m.author || m.ts - prev.ts > GROUP_MS || !!m.replyTo;
+          const firstNew =
+            since > 0 && m.author !== me && m.ts > since && !all.slice(0, i).some((x) => x.ts > since && x.author !== me);
           return (
             <Fragment key={m.id}>
               {newDay && <DayDivider ts={m.ts} />}
+              {firstNew && (
+                <li className="relative mx-4 my-2 h-px bg-destructive" role="separator">
+                  <span className="absolute -top-2 right-0 rounded-sm bg-destructive px-1 text-[10px] leading-4 font-bold text-white uppercase">
+                    Novas
+                  </span>
+                </li>
+              )}
               <MessageRow
                 message={m}
                 me={me}

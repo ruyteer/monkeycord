@@ -1,8 +1,8 @@
 {
   "name": "monkeycord-desktop",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "MonkeyCord — chamadas de video e audio com a galera",
+  "description": "MonkeyCord — chat, voz e tela com a galera",
   "author": "MonkeyCord",
   "license": "MIT",
   "main": "main.js",
@@ -33,6 +33,7 @@
       "preload-picker.js",
       "picker.html",
       "picker.js",
+      "build/icon.png",
       "renderer/**/*"
     ],
     "win": {
@@ -60,6 +61,14 @@
         "owner": "ruyteer",
         "repo": "monkeycord",
         "releaseType": "release"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "MonkeyCord",
+        "schemes": [
+          "monkeycord"
+        ]
       }
     ]
   },

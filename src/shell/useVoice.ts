@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { createMeeting, fetchToken, type Meeting } from "@/call/meeting";
+import { Meeting } from "@/call/meeting";
+import { playSound } from "@/call/sounds";
+import { getIceServers } from "@/chat/store";
 import type { Channel } from "./data";
-
-/** Chamada preparada no hover vale por 2 min (cada uma vira um participante no RealtimeKit, então não prepara à toa) */
-const PREPARED_TTL = 2 * 60 * 1000;
 
 export type VoiceState =
   | { status: "idle" }
@@ -27,46 +26,22 @@ export function useVoice(name: string) {
   deafRef.current = deafened;
   // Cada join/leave ganha um número; respostas atrasadas de um join antigo são descartadas
   const seq = useRef(0);
-  /**
-   * Chamada preparada antes do clique (mouse em cima do canal): token + init
-   * já feitos, o clique só faz o join. Uma por vez; sem microfone/câmera,
-   * então não pede permissão nenhuma.
-   */
-  const prepared = useRef<{ room: string; at: number; meeting: Promise<Meeting> } | null>(null);
+  // Mouse em cima do canal: já busca os servidores STUN/TURN, o clique só liga
+  const prefetch = useCallback((_channel: Channel) => void getIceServers(), []);
 
-  const prepare = (room: string) =>
-    fetchToken(name, room).then((r) => createMeeting(r.authToken, { audio: false, video: false }));
-
-  const prefetch = useCallback(
-    (channel: Channel) => {
-      const room = channel.room ?? channel.id;
-      const cur = stateRef.current;
-      if (cur.status !== "idle" && (cur.channel.room ?? cur.channel.id) === room) return;
-      const p = prepared.current;
-      if (p && p.room === room && Date.now() - p.at < PREPARED_TTL) return;
-      const meeting = prepare(room);
-      meeting.catch(() => {
-        if (prepared.current?.meeting === meeting) prepared.current = null;
-      });
-      prepared.current = { room, at: Date.now(), meeting };
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [name]
-  );
-
-  const takeMeeting = (room: string) => {
-    const p = prepared.current;
-    prepared.current = null;
-    if (p && p.room === room && Date.now() - p.at < PREPARED_TTL) return p.meeting.catch(() => prepare(room));
-    return prepare(room);
-  };
+  // Mudo/surdo atuais, lidos na hora de entrar
+  const micWanted = useRef(true);
+  micWanted.current = !muted && !deafened;
 
   const leave = useCallback(async () => {
     const s = stateRef.current;
     seq.current++;
     stateRef.current = { status: "idle" };
     setState(stateRef.current);
-    if (s.status === "connected") await s.meeting.leave().catch(() => {});
+    if (s.status === "connected") {
+      playSound("selfLeave");
+      await s.meeting.leave().catch(() => {});
+    }
   }, []);
 
   const join = useCallback(
@@ -80,16 +55,14 @@ export function useVoice(name: string) {
       setState(stateRef.current);
       try {
         const t0 = performance.now();
-        // Sem pedir o microfone no init (era o passo mais lento): ele liga logo depois do join, pelo efeito abaixo
-        const meeting = await takeMeeting(channel.room ?? channel.id);
-        const t1 = performance.now();
-        if (my !== seq.current) return;
-        await meeting.join();
+        const meeting = new Meeting(channel.id, name);
+        await meeting.join({ audio: micWanted.current });
         if (my !== seq.current) {
-          meeting.leave().catch(() => {});
+          void meeting.leave();
           return;
         }
-        console.info(`[voz] preparo ${Math.round(t1 - t0)}ms · join ${Math.round(performance.now() - t1)}ms`);
+        console.info(`[voz] entrou em ${Math.round(performance.now() - t0)}ms`);
+        playSound("selfJoin");
         setState({ status: "connected", channel, meeting });
       } catch (err) {
         if (my !== seq.current) return;
@@ -141,9 +114,16 @@ export function useVoice(name: string) {
       // Igual ao Discord: desmutar enquanto surdo tira o surdo também
       setDeafened(false);
       setMuted(false);
-    } else setMuted((m) => !m);
+      playSound("undeafen");
+    } else {
+      playSound(muted ? "unmute" : "mute");
+      setMuted(!muted);
+    }
   };
-  const toggleDeafen = () => setDeafened((d) => !d);
+  const toggleDeafen = () => {
+    playSound(deafened ? "undeafen" : "deafen");
+    setDeafened(!deafened);
+  };
 
   return { state, meeting, join, leave, prefetch, muted, deafened, toggleMute, toggleDeafen };
 }

@@ -1,4 +1,4 @@
-// Servidor Node sem dependências (Railway / local). Rodar: node server.js
+// Servidor Node sem dependências que serve o build (dist/). Rodar: node server.js
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -11,7 +11,6 @@ try {
   }
 } catch {}
 
-const { join } = require("./lib/rtk");
 const dist = path.join(__dirname, "dist");
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -27,29 +26,6 @@ const types = {
 
 http
   .createServer(async (req, res) => {
-    if (req.url === "/api/join") {
-      const cors = {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      };
-      if (req.method === "OPTIONS") {
-        res.writeHead(204, cors).end();
-        return;
-      }
-      let body = "";
-      for await (const chunk of req) body += chunk;
-      try {
-        const { name, room } = JSON.parse(body || "{}");
-        const out = await join(name, room);
-        res.writeHead(200, cors).end(JSON.stringify(out));
-      } catch (e) {
-        console.error(e);
-        res.writeHead(400, cors).end(JSON.stringify({ error: e.message }));
-      }
-      return;
-    }
     // Arquivos do build (npm run build); qualquer outra rota cai no index.html
     let url = req.url.split("?")[0];
     try {
