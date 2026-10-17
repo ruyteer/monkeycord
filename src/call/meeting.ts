@@ -12,7 +12,15 @@
  * A forma da API (self, participants.joined, eventos) imita a do RealtimeKit
  * que o app usava antes, pra interface não precisar mudar.
  */
-import { getIceServers, getPresence, getSessionId, onSignal, sendSignal, subscribeChat } from "@/chat/store";
+import {
+  getIceServers,
+  getPresence,
+  getSessionId,
+  onSignal,
+  sendSignal,
+  subscribeChat,
+  updateVoiceState,
+} from "@/chat/store";
 import { cameraConstraints, getPrefs, micConstraints } from "./devices";
 
 export const isMobile =
@@ -78,16 +86,34 @@ class Emitter {
   }
 }
 
-/** O que cada lado manda pelo canal de dados: quais streams são o quê e o estado. */
+/** O que cada lado manda pelo canal de dados: em qual faixa está cada coisa e o estado. */
+/**
+ * Cada faixa é identificada pelo `mid` dela na conexão (fixo, não muda quando a
+ * faixa é reaproveitada). Por stream não dá: o Chrome do outro lado não move a
+ * faixa recebida pro stream novo quando ela é reaproveitada.
+ */
 type PeerState = {
   name: string;
   audio: boolean;
   mic: string | null;
   cam: string | null;
-  screen: string | null;
+  screenVideo: string | null;
+  screenAudio: string | null;
 };
 
-type Signal = { description?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit | null };
+/**
+ * gen = id da conexão de quem mandou (muda quando ela é refeita), pra
+ * descartar sinal atrasado de uma conexão velha. reset = "refiz a minha, refaz a sua".
+ */
+type Signal = {
+  gen?: string;
+  reset?: boolean;
+  description?: RTCSessionDescriptionInit;
+  candidate?: RTCIceCandidateInit | null;
+};
+
+/** Sem conectar nesse tempo, a conexão com a pessoa é refeita do zero. */
+const CONNECT_TIMEOUT = 12_000;
 
 /* ---------- Participantes ---------- */
 
@@ -143,10 +169,19 @@ class Peer {
   ctl: RTCDataChannel;
   makingOffer = false;
   ignoreOffer = false;
-  streams = new Map<string, MediaStream>();
   remote: PeerState | null = null;
-  senders = new Map<MediaStreamTrack, RTCRtpSender>();
+  senders = new Map<MediaStreamTrack, RTCRtpTransceiver>();
+  /** Faixas que este lado criou pra enviar (só elas são reaproveitadas; as do outro lado ficam com ele) */
+  private own = new Set<RTCRtpTransceiver>();
   restartTimer?: number;
+  /** Sinais processados um de cada vez, na ordem em que chegaram */
+  private queue: Promise<void> = Promise.resolve();
+  /** Id desta conexão e da conexão do outro lado (ver Signal.gen) */
+  gen = crypto.randomUUID().slice(0, 8);
+  /** Bytes de vídeo da última medição (pra calcular kbps) */
+  lastBytes?: { at: number; inBytes: number; outBytes: number };
+  theirGen: string | null = null;
+  private connectTimer?: number;
 
   constructor(
     public id: string,
@@ -167,28 +202,26 @@ class Peer {
       }
     };
 
-    this.pc.onnegotiationneeded = async () => {
-      try {
-        this.makingOffer = true;
-        await this.pc.setLocalDescription();
-        this.signal({ description: this.pc.localDescription!.toJSON() });
-      } catch (err) {
-        console.warn("[voz] negociação", err);
-      } finally {
-        this.makingOffer = false;
-      }
-    };
+    this.pc.onnegotiationneeded = () => void this.negotiate();
     this.pc.onicecandidate = ({ candidate }) => this.signal({ candidate: candidate?.toJSON() ?? null });
-    this.pc.ontrack = ({ track, streams }) => {
-      const stream = streams[0];
-      if (!stream) return;
-      this.streams.set(stream.id, stream);
-      stream.onremovetrack = () => this.call.refreshPeer(this);
+    // Negociação terminou: os mids novos já existem dos dois lados
+    this.pc.onsignalingstatechange = () => {
+      if (this.pc.signalingState !== "stable") return;
+      this.sendState();
+      this.call.refreshPeer(this);
+    };
+    this.pc.ontrack = ({ track }) => {
       track.onunmute = () => this.call.refreshPeer(this);
       this.call.refreshPeer(this);
     };
+    // Não conectou a tempo (sinal perdido, rede ruim): quem não é "educado" refaz tudo
+    this.connectTimer = window.setTimeout(() => {
+      if (this.pc.connectionState !== "connected" && !this.polite) this.call.resetPeer(this.id, true);
+    }, CONNECT_TIMEOUT + Math.random() * 2000);
+
     this.pc.onconnectionstatechange = () => {
       const st = this.pc.connectionState;
+      if (st === "connected") window.clearTimeout(this.connectTimer);
       if (st === "failed") this.pc.restartIce();
       // "disconnected" às vezes volta sozinho; se não voltar em 5s, tenta de novo
       window.clearTimeout(this.restartTimer);
@@ -198,10 +231,41 @@ class Peer {
   }
 
   signal(data: Signal) {
-    sendSignal(this.id, data);
+    sendSignal(this.id, { ...data, gen: this.gen });
   }
 
-  async receive(data: Signal) {
+  private stuckTimer?: number;
+
+  /** Manda uma oferta. Se a resposta não vier (sinal perdido), desfaz e tenta de novo. */
+  private async negotiate() {
+    try {
+      this.makingOffer = true;
+      await this.pc.setLocalDescription();
+      this.signal({ description: this.pc.localDescription!.toJSON() });
+    } catch (err) {
+      console.warn("[voz] negociação", err);
+    } finally {
+      this.makingOffer = false;
+    }
+    window.clearTimeout(this.stuckTimer);
+    const offer = this.pc.localDescription?.sdp;
+    this.stuckTimer = window.setTimeout(() => {
+      if (this.pc.signalingState !== "have-local-offer" || this.pc.localDescription?.sdp !== offer) return;
+      console.warn("[voz] oferta sem resposta, tentando de novo");
+      void this.queue.then(async () => {
+        if (this.pc.signalingState !== "have-local-offer") return;
+        await this.pc.setLocalDescription({ type: "rollback" }).catch(() => {});
+        await this.negotiate();
+      });
+    }, 6000 + Math.random() * 2000);
+  }
+
+  receive(data: Signal) {
+    this.queue = this.queue.then(() => this.handle(data));
+    return this.queue;
+  }
+
+  private async handle(data: Signal) {
     const { description, candidate } = data;
     try {
       if (description) {
@@ -226,25 +290,59 @@ class Peer {
   }
 
   sendState() {
-    if (this.ctl.readyState === "open") this.ctl.send(JSON.stringify(this.call.localState()));
+    if (this.ctl.readyState === "open") this.ctl.send(JSON.stringify(this.call.localState(this)));
   }
 
+  /**
+   * Manda uma faixa (mic, câmera, tela). Reaproveita uma faixa da conexão que
+   * esteja parada em vez de criar outra: senão cada liga/desliga de câmera ou
+   * tela deixa a negociação ~7 KB maior pra sempre, até passar do limite do
+   * gateway e a transmissão nova nunca chegar pra essa pessoa.
+   */
   addTrack(track: MediaStreamTrack, stream: MediaStream, maxBitrate?: number) {
     if (this.senders.has(track)) return;
+    const used = new Set(this.senders.values());
+    const idle = [...this.own].find(
+      (t) =>
+        !used.has(t) &&
+        t.currentDirection !== "stopped" &&
+        t.sender.track == null &&
+        t.receiver.track.kind === track.kind &&
+        t.direction === "inactive"
+    );
+    if (idle) {
+      void idle.sender.replaceTrack(track);
+      idle.sender.setStreams(stream);
+      idle.direction = "sendonly";
+      if (maxBitrate) {
+        const params = idle.sender.getParameters();
+        if (params.encodings?.[0]) {
+          params.encodings[0].maxBitrate = maxBitrate;
+          if (track.kind === "video") params.encodings[0].maxFramerate = 30;
+          void idle.sender.setParameters(params).catch(() => {});
+        }
+      }
+      this.senders.set(track, idle);
+      return;
+    }
     const t = this.pc.addTransceiver(track, {
-      direction: "sendrecv",
+      // Só de ida: cada lado manda nas suas faixas (o outro não pega carona nelas)
+      direction: "sendonly",
       streams: [stream],
-      sendEncodings: maxBitrate ? [{ maxBitrate, maxFramerate: 30 }] : undefined,
+      sendEncodings: maxBitrate ? [{ maxBitrate, ...(track.kind === "video" ? { maxFramerate: 30 } : {}) }] : undefined,
     });
-    this.senders.set(track, t.sender);
+    this.senders.set(track, t);
+    this.own.add(t);
   }
 
+  /** Para de mandar a faixa e deixa ela livre pra próxima vez (ver addTrack). */
   removeTrack(track: MediaStreamTrack) {
-    const sender = this.senders.get(track);
-    if (!sender) return;
+    const t = this.senders.get(track);
+    if (!t) return;
     this.senders.delete(track);
     try {
-      this.pc.removeTrack(sender);
+      void t.sender.replaceTrack(null);
+      t.direction = "inactive";
     } catch {
       /* conexão já fechada */
     }
@@ -252,6 +350,10 @@ class Peer {
 
   close() {
     window.clearTimeout(this.restartTimer);
+    window.clearTimeout(this.stuckTimer);
+    window.clearTimeout(this.connectTimer);
+    this.pc.onnegotiationneeded = this.pc.onicecandidate = this.pc.ontrack = null;
+    this.pc.onconnectionstatechange = this.pc.onsignalingstatechange = null;
     this.ctl.close();
     this.pc.close();
   }
@@ -269,7 +371,7 @@ function stereoOpus(sdp: string) {
 export class Meeting {
   self: Self;
   participants: Joined & { joined: Joined };
-  private peers = new Map<string, Peer>();
+  peers = new Map<string, Peer>();
   private mySid: string | null = null;
   private joinedChannel = false;
   private iceServers: RTCIceServer[] = [];
@@ -290,12 +392,16 @@ export class Meeting {
   }
 
   /** Entra no canal: pega o microfone (se for pra ligar) e começa a ligar nos outros. */
-  async join(opts: { audio: boolean }) {
+  async join(opts: { audio: boolean; muted: boolean; deafened: boolean }) {
     this.iceServers = await getIceServers();
     if (opts.audio) await this.setMic(true).catch(() => {});
     this.joinedChannel = true;
     this.unsubs.push(onSignal((from, data) => this.onSignal(from, data as Signal)));
     this.unsubs.push(subscribeChat(() => this.sync()));
+    // Avisa o gateway que está no canal ANTES de mandar qualquer sinal: ele só
+    // repassa sinal entre quem está no mesmo canal, e descartava a primeira
+    // oferta (os dois lados ficavam esperando resposta pra sempre).
+    updateVoiceState(this.channelId, opts.muted, opts.deafened);
     this.sync();
     this.self.emit("roomJoined");
   }
@@ -334,10 +440,32 @@ export class Meeting {
     for (const id of [...this.peers.keys()]) if (!ids.has(id)) this.dropPeer(id);
   }
 
-  private addPeer(id: string, name: string) {
+  private newPeer(id: string) {
     const peer = new Peer(id, this.mySid! < id, this.iceServers, this);
     this.peers.set(id, peer);
     for (const [track, stream, rate] of this.localTracks()) peer.addTrack(track, stream, rate);
+    return peer;
+  }
+
+  /**
+   * Refaz a conexão com uma pessoa sem tirar ela da chamada. initiator = fui eu
+   * que desisti (aviso o outro lado pra refazer a dele também).
+   */
+  resetPeer(id: string, initiator: boolean, theirGen?: string) {
+    if (!this.joinedChannel || !this.peers.has(id)) return;
+    console.warn("[voz] refazendo a conexão com", id.slice(0, 6));
+    this.peers.get(id)!.close();
+    this.meter.unwatch(id);
+    const peer = this.newPeer(id);
+    if (theirGen) peer.theirGen = theirGen;
+    if (initiator) peer.signal({ reset: true });
+    const p = this.participants.joined.map.get(id);
+    if (p) this.refreshPeer(peer);
+    return peer;
+  }
+
+  private addPeer(id: string, name: string) {
+    const peer = this.newPeer(id);
     const p = new Participant(id, name);
     this.participants.joined.map.set(id, p);
     this.participants.joined.emit("participantJoined", p);
@@ -354,13 +482,32 @@ export class Meeting {
   }
 
   private onSignal(from: string, data: Signal) {
+    if (import.meta.env.DEV) {
+      console.debug("[voz] sinal de", from.slice(0, 6), data.description?.type ?? (data.candidate ? "candidate" : "fim"), this.peers.has(from));
+    }
     if (!this.joinedChannel) return;
     let peer = this.peers.get(from);
     if (!peer) {
       // O outro viu você antes de você ver ele: só aceita se ele estiver no canal
       const v = getPresence().voice.find((x) => x.sessionId === from && x.channelId === this.channelId);
-      if (!v || !this.mySid) return;
+      if (!v || !this.mySid) {
+        console.warn("[voz] sinal descartado de", from.slice(0, 6), { naPresenca: !!v, mySid: this.mySid });
+        return;
+      }
       peer = this.addPeer(from, v.name);
+    }
+    // Conexão do outro lado foi refeita: refaz a minha também
+    if (data.reset) {
+      this.resetPeer(from, false, data.gen);
+      return;
+    }
+    if (data.gen) {
+      if (!peer.theirGen) peer.theirGen = data.gen;
+      else if (peer.theirGen !== data.gen) {
+        // Oferta de uma conexão nova do outro lado (ele recarregou/refez): acompanha
+        if (data.description?.type === "offer") peer = this.resetPeer(from, false, data.gen) ?? peer;
+        else return; // sinal atrasado de uma conexão velha
+      }
     }
     void peer.receive(data);
   }
@@ -370,9 +517,14 @@ export class Meeting {
     const p = this.participants.joined.map.get(peer.id);
     if (!p) return;
     const st = peer.remote;
-    const live = (t?: MediaStreamTrack) => (t && t.readyState === "live" ? t : undefined);
-    const pick = (id: string | null | undefined, kind: "audio" | "video") =>
-      id ? live(peer.streams.get(id)?.getTracks().find((t) => t.kind === kind)) : undefined;
+    const transceivers = peer.pc.getTransceivers();
+    const pick = (mid: string | null | undefined, kind: "audio" | "video") => {
+      if (!mid) return undefined;
+      const t = transceivers.find((x) => x.mid === mid);
+      const track = t?.receiver.track;
+      const receiving = t?.currentDirection === "recvonly" || t?.currentDirection === "sendrecv";
+      return track && receiving && track.kind === kind && track.readyState === "live" ? track : undefined;
+    };
 
     const before = [p.audioEnabled, p.videoEnabled, p.screenShareEnabled, p.audioTrack, p.videoTrack, p.screenShareTracks.video, p.screenShareTracks.audio];
     if (st) p.name = st.name;
@@ -380,7 +532,7 @@ export class Meeting {
     p.audioEnabled = !!st?.audio && !!p.audioTrack;
     p.videoTrack = pick(st?.cam, "video");
     p.videoEnabled = !!p.videoTrack;
-    p.screenShareTracks = { video: pick(st?.screen, "video"), audio: pick(st?.screen, "audio") };
+    p.screenShareTracks = { video: pick(st?.screenVideo, "video"), audio: pick(st?.screenAudio, "audio") };
     p.screenShareEnabled = !!p.screenShareTracks.video;
     const after = [p.audioEnabled, p.videoEnabled, p.screenShareEnabled, p.audioTrack, p.videoTrack, p.screenShareTracks.video, p.screenShareTracks.audio];
 
@@ -393,13 +545,16 @@ export class Meeting {
     }
   }
 
-  localState(): PeerState {
+  /** O que eu mando pra essa pessoa e em qual faixa (mid) de cada coisa. */
+  localState(peer: Peer): PeerState {
+    const mid = (t?: MediaStreamTrack) => (t ? (peer.senders.get(t)?.mid ?? null) : null);
     return {
       name: this.name,
       audio: this.self.audioEnabled,
-      mic: this.mic?.stream.id ?? null,
-      cam: this.cam?.id ?? null,
-      screen: this.screen?.id ?? null,
+      mic: mid(this.mic?.stream.getAudioTracks()[0]),
+      cam: mid(this.cam?.getVideoTracks()[0]),
+      screenVideo: mid(this.screen?.getVideoTracks()[0]),
+      screenAudio: mid(this.screen?.getAudioTracks()[0]),
     };
   }
 
@@ -509,16 +664,50 @@ export class Meeting {
     this.self.emit("screenShareUpdate");
   }
 
-  /** Qualidade da conexão com cada pessoa (pra mostrar o ping). */
+  /**
+   * Qualidade da conexão com cada pessoa: ping, se é direta ou passa por um
+   * servidor TURN, e quanto está chegando/saindo de vídeo.
+   */
   async stats() {
-    const out: { id: string; rtt?: number; state: RTCPeerConnectionState }[] = [];
+    const out: {
+      id: string;
+      name: string;
+      rtt?: number;
+      state: RTCPeerConnectionState;
+      route?: "direta" | "turn";
+      inKbps: number;
+      outKbps: number;
+    }[] = [];
     for (const [id, peer] of this.peers) {
       let rtt: number | undefined;
+      let route: "direta" | "turn" | undefined;
+      let inBytes = 0;
+      let outBytes = 0;
       const report = await peer.pc.getStats().catch(() => null);
+      const byId = new Map<string, Record<string, unknown>>();
+      report?.forEach((r) => byId.set(r.id, r));
       report?.forEach((r) => {
-        if (r.type === "candidate-pair" && r.nominated && r.currentRoundTripTime != null) rtt = r.currentRoundTripTime * 1000;
+        if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") {
+          if (r.currentRoundTripTime != null) rtt = r.currentRoundTripTime * 1000;
+          const local = byId.get(r.localCandidateId);
+          route = local?.candidateType === "relay" ? "turn" : "direta";
+        }
+        if (r.type === "inbound-rtp" && r.kind === "video") inBytes += r.bytesReceived ?? 0;
+        if (r.type === "outbound-rtp" && r.kind === "video") outBytes += r.bytesSent ?? 0;
       });
-      out.push({ id, rtt, state: peer.pc.connectionState });
+      const now = performance.now();
+      const prev = peer.lastBytes;
+      peer.lastBytes = { at: now, inBytes, outBytes };
+      const secs = prev ? (now - prev.at) / 1000 : 0;
+      out.push({
+        id,
+        name: this.participants.joined.map.get(id)?.name ?? "?",
+        rtt,
+        state: peer.pc.connectionState,
+        route,
+        inKbps: secs ? Math.max(0, ((inBytes - prev!.inBytes) * 8) / 1000 / secs) : 0,
+        outKbps: secs ? Math.max(0, ((outBytes - prev!.outBytes) * 8) / 1000 / secs) : 0,
+      });
     }
     return out;
   }

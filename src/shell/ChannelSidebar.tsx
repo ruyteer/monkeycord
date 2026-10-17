@@ -566,8 +566,10 @@ function VoiceMembersLive({ meeting, deafened, onOpenDm }: { meeting: Meeting; d
 }
 
 /** Ping até a pessoa mais lenta da chamada, atualizado a cada 3s. */
+type ConnStats = Awaited<ReturnType<Meeting["stats"]>>;
+
 function usePing(meeting: Meeting | null) {
-  const [ping, setPing] = useState<{ ms?: number; bad: boolean } | null>(null);
+  const [ping, setPing] = useState<{ ms?: number; bad: boolean; list: ConnStats } | null>(null);
   useEffect(() => {
     if (!meeting) return setPing(null);
     const tick = async () => {
@@ -575,7 +577,8 @@ function usePing(meeting: Meeting | null) {
       const rtts = list.map((s) => s.rtt).filter((x): x is number => x != null);
       setPing({
         ms: rtts.length ? Math.round(Math.max(...rtts)) : undefined,
-        bad: list.some((s) => s.state === "failed" || s.state === "disconnected"),
+        bad: list.some((s) => s.state !== "connected"),
+        list,
       });
     };
     void tick();
@@ -583,6 +586,49 @@ function usePing(meeting: Meeting | null) {
     return () => window.clearInterval(id);
   }, [meeting]);
   return ping;
+}
+
+/** Conexão com cada pessoa da chamada (clique em "Voz conectada"). */
+function ConnectionDetails({ list }: { list: ConnStats }) {
+  const label: Record<string, string> = {
+    new: "começando",
+    connecting: "conectando",
+    connected: "conectado",
+    disconnected: "caiu, voltando",
+    failed: "não conectou",
+    closed: "fechado",
+  };
+  return (
+    <div>
+      <p className="mb-2 text-xs font-bold tracking-wide text-muted-foreground uppercase">Conexão de voz</p>
+      {!list.length && <p className="text-sm text-muted-foreground">Só você no canal.</p>}
+      <ul className="flex flex-col gap-2">
+        {list.map((s) => (
+          <li key={s.id} className="rounded-md bg-white/5 px-2.5 py-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate font-medium">{s.name}</span>
+              <span className={cn("shrink-0 text-xs font-semibold", s.state === "connected" ? "text-success" : "text-warning")}>
+                {label[s.state] ?? s.state}
+              </span>
+            </div>
+            {s.state === "connected" && (
+              <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                {s.rtt != null && `${Math.round(s.rtt)} ms · `}
+                {s.route === "turn" ? "via servidor TURN" : "direto"}
+                {s.inKbps > 50 && ` · recebendo ${(s.inKbps / 1000).toFixed(1)} Mbps`}
+                {s.outKbps > 50 && ` · enviando ${(s.outKbps / 1000).toFixed(1)} Mbps`}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {list.some((s) => s.state === "failed" || s.state === "connecting" || s.state === "new") && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Se alguém ficar em “conectando” por mais de 15 segundos, a rede de vocês não deixa ligar direto: precisa de um servidor TURN (veja o README).
+        </p>
+      )}
+    </div>
+  );
 }
 
 function VoiceConnected({ voice, onOpen }: { voice: Voice; onOpen: (c: Channel) => void }) {
@@ -595,12 +641,24 @@ function VoiceConnected({ voice, onOpen }: { voice: Voice; onOpen: (c: Channel) 
       <div className="flex items-center gap-2 px-1">
         <Signal className={cn("size-4.5 shrink-0", connecting ? "text-warning" : "text-success")} />
         <div className="min-w-0 flex-1">
-          <p className={cn("text-sm font-semibold", connecting ? "text-warning" : "text-success")}>
-            {connecting ? "Conectando..." : ping?.bad ? "Reconectando alguém..." : "Voz conectada"}
-            {!connecting && ping?.ms != null && (
-              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground tabular-nums">{ping.ms} ms</span>
-            )}
-          </p>
+          <Popover
+            side="top"
+            align="start"
+            className="w-72 p-3"
+            trigger={
+              <button
+                type="button"
+                className={cn("text-left text-sm font-semibold hover:underline", connecting ? "text-warning" : ping?.bad ? "text-warning" : "text-success")}
+              >
+                {connecting ? "Conectando..." : ping?.bad ? "Conectando com alguém..." : "Voz conectada"}
+                {!connecting && ping?.ms != null && (
+                  <span className="ml-1.5 text-[11px] font-normal text-muted-foreground tabular-nums">{ping.ms} ms</span>
+                )}
+              </button>
+            }
+          >
+            <ConnectionDetails list={ping?.list ?? []} />
+          </Popover>
           <button
             type="button"
             onClick={() => onOpen(channel)}

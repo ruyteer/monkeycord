@@ -24,6 +24,8 @@ export function useVoice(name: string) {
   stateRef.current = state;
   const deafRef = useRef(deafened);
   deafRef.current = deafened;
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
   // Cada join/leave ganha um número; respostas atrasadas de um join antigo são descartadas
   const seq = useRef(0);
   // Mouse em cima do canal: já busca os servidores STUN/TURN, o clique só liga
@@ -56,7 +58,7 @@ export function useVoice(name: string) {
       try {
         const t0 = performance.now();
         const meeting = new Meeting(channel.id, name);
-        await meeting.join({ audio: micWanted.current });
+        await meeting.join({ audio: micWanted.current, muted: mutedRef.current, deafened: deafRef.current });
         if (my !== seq.current) {
           void meeting.leave();
           return;
@@ -64,6 +66,8 @@ export function useVoice(name: string) {
         console.info(`[voz] entrou em ${Math.round(performance.now() - t0)}ms`);
         playSound("selfJoin");
         setState({ status: "connected", channel, meeting });
+        // Em desenvolvimento dá pra inspecionar a chamada pelo console: __meeting
+        if (import.meta.env.DEV) (window as unknown as { __meeting: Meeting }).__meeting = meeting;
       } catch (err) {
         if (my !== seq.current) return;
         setState({ status: "idle" });

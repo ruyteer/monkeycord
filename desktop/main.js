@@ -20,6 +20,9 @@ const PROTOCOL = "monkeycord";
 
 app.setAppUserModelId("app.monkeycord.desktop");
 
+// Teste automático usa pasta própria: roda mesmo com o MonkeyCord instalado aberto
+if (process.env.MONKEYCORD_SMOKE) app.setPath("userData", path.join(app.getPath("temp"), "monkeycord-smoke"));
+
 // Uma janela só: clicar no atalho de novo (ou num link monkeycord://) foca a que já está aberta
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -117,6 +120,12 @@ function createWindow() {
     }
   });
   win.on("focus", () => win.flashFrame(false));
+  // Ctrl+Shift+I abre o DevTools (console com os logs da voz, pra investigar problema)
+  win.webContents.on("before-input-event", (_e, input) => {
+    if (input.type === "keyDown" && input.control && input.shift && input.key.toLowerCase() === "i") {
+      win.webContents.toggleDevTools();
+    }
+  });
   win.on("closed", () => (win = null));
 
   if (process.env.MONKEYCORD_SMOKE) smokeTest();

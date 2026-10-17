@@ -104,7 +104,11 @@ export function connectChat(name: string) {
   });
   client = c;
   c.connect();
+  // Fechou/recarregou a página: sai na hora (senão a sessão velha fica 20s como "fantasma" no canal de voz)
+  const bye = () => c.close();
+  window.addEventListener("pagehide", bye);
   return () => {
+    window.removeEventListener("pagehide", bye);
     c.close();
     if (client === c) client = null;
     presence = OFFLINE;

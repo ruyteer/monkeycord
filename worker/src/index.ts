@@ -725,7 +725,8 @@ export class Gateway extends DurableObject<Env> {
         const to = typeof p.d?.to === "string" ? this.session(p.d.to) : null;
         if (!from?.voice || !to || to.voice !== from.voice) return;
         const data = JSON.stringify(p.d.data ?? null);
-        if (data.length > 64_000) return;
+        // Bem acima do tamanho normal de uma negociação (~10–30 KB); o limite do WebSocket é 1 MB
+        if (data.length > 256_000) return;
         const frame = `{"op":${Op.Signal},"d":{"from":${JSON.stringify(from.id)},"data":${data}}}`;
         for (const other of this.ctx.getWebSockets()) {
           if (attachment(other).sid !== to.id) continue;
